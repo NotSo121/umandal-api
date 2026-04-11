@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String
+  role      Role     @default(USER)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Mandal {
+  id      Int      @id @default(autoincrement())
+  name    String   @unique
+  bhaktos Bhakto[]
+}
+
+model Category {
+  id      Int      @id @default(autoincrement())
+  name    String   @unique
+  bhaktos Bhakto[]
+}
+
+model Bhakto {
+  id          Int          @id @default(autoincrement())
+  fullName    String
+  houseNo     String?
+  society     String?
+  mandalId    Int?
+  mandal      Mandal?      @relation(fields: [mandalId], references: [id])
+  mobileNo    String?
+  dateOfBirth DateTime?
+  gender      Gender       @default(MALE)
+  categoryId  Int?
+  category    Category?    @relation(fields: [categoryId], references: [id])
+  occupation  String?
+  referenceBy String?
+  isLeader    Boolean      @default(false)
+  photoUrl    String?
+  isActive    Boolean      @default(true)
+  remarks     String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  attendances Attendance[]
+}
+
+model Event {
+  id          Int          @id @default(autoincrement())
+  name        String
+  eventDate   DateTime
+  location    String?
+  description String?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  attendances Attendance[]
+}
+
+model Attendance {
+  id        Int      @id @default(autoincrement())
+  bhaktoId  Int
+  bhakto    Bhakto   @relation(fields: [bhaktoId], references: [id])
+  eventId   Int
+  event     Event    @relation(fields: [eventId], references: [id])
+  isPresent Boolean  @default(false)
+  remarks   String?
+  createdAt DateTime @default(now())
+
+  @@unique([bhaktoId, eventId])
+}
