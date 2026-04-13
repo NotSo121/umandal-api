@@ -20,6 +20,7 @@ const getAllBhakto = async (req, res) => {
       include: {
         mandal:   { select: { id: true, name: true } },
         category: { select: { id: true, name: true } },
+        society:  { select: { id: true, name: true } },
       },
       orderBy: { fullName: 'asc' },
     });
@@ -41,6 +42,7 @@ const getBhaktoById = async (req, res) => {
       include: {
         mandal:   { select: { id: true, name: true } },
         category: { select: { id: true, name: true } },
+        society:  { select: { id: true, name: true } },
       },
     });
 
@@ -59,7 +61,7 @@ const getBhaktoById = async (req, res) => {
 const createBhakto = async (req, res) => {
   try {
     const {
-      fullName, houseNo, society, mandalId, mobileNo,
+      fullName, houseNo, societyId, mandalId, mobileNo,
       dateOfBirth, gender, categoryId, occupation,
       referenceBy, isLeader, isActive, remarks,
     } = req.body;
@@ -77,7 +79,7 @@ const createBhakto = async (req, res) => {
       data: {
         fullName,
         houseNo,
-        society,
+        societyId:   societyId   ? parseInt(societyId)   : null,
         mandalId:    mandalId    ? parseInt(mandalId)    : null,
         mobileNo,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
@@ -110,7 +112,7 @@ const updateBhakto = async (req, res) => {
     }
 
     const {
-      fullName, houseNo, society, mandalId, mobileNo,
+      fullName, houseNo, societyId, mandalId, mobileNo,
       dateOfBirth, gender, categoryId, occupation,
       referenceBy, isLeader, isActive, remarks,
     } = req.body;
@@ -125,7 +127,7 @@ const updateBhakto = async (req, res) => {
       data: {
         fullName:    fullName    || existing.fullName,
         houseNo,
-        society,
+        societyId:   societyId   ? parseInt(societyId)   : null,
         mandalId:    mandalId    ? parseInt(mandalId)    : null,
         mobileNo,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,

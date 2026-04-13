@@ -35,6 +35,12 @@ model Mandal {
   bhaktos Bhakto[]
 }
 
+model Society {
+  id      Int      @id @default(autoincrement())
+  name    String   @unique
+  bhaktos Bhakto[]
+}
+
 model Category {
   id      Int      @id @default(autoincrement())
   name    String   @unique
@@ -45,7 +51,8 @@ model Bhakto {
   id          Int          @id @default(autoincrement())
   fullName    String
   houseNo     String?
-  society     String?
+  societyId   Int?
+  society     Society?     @relation(fields: [societyId], references: [id])
   mandalId    Int?
   mandal      Mandal?      @relation(fields: [mandalId], references: [id])
   mobileNo    String?
