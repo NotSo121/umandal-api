@@ -1,10 +1,9 @@
-    const { PrismaClient } = require('@prisma/client');
+const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 // GET /api/dashboard/stats
 const getStats = async (req, res) => {
   try {
-    // Run all counts in parallel for performance
     const [
       totalBhakto,
       activeBhakto,
@@ -13,7 +12,8 @@ const getStats = async (req, res) => {
       totalAttendance,
       presentAttendance,
       recentEvents,
-      mandalStats,
+      societyStats,
+      categoryStats,
     ] = await Promise.all([
       // Total bhakto
       prisma.bhakto.count(),
@@ -46,8 +46,18 @@ const getStats = async (req, res) => {
         },
       }),
 
-      // Bhakto count per mandal
-      prisma.mandal.findMany({
+      // Bhakto count per society
+      prisma.society.findMany({
+        select: {
+          id: true,
+          name: true,
+          _count: { select: { bhaktos: true } },
+        },
+        orderBy: { name: 'asc' },
+      }),
+
+      // Bhakto count per category
+      prisma.category.findMany({
         select: {
           id: true,
           name: true,
@@ -61,10 +71,10 @@ const getStats = async (req, res) => {
       success: true,
       data: {
         bhakto: {
-          total:   totalBhakto,
-          active:  activeBhakto,
+          total:    totalBhakto,
+          active:   activeBhakto,
           inactive: totalBhakto - activeBhakto,
-          leaders: totalLeaders,
+          leaders:  totalLeaders,
         },
         events: {
           total: totalEvents,
@@ -75,16 +85,21 @@ const getStats = async (req, res) => {
           absent:  totalAttendance - presentAttendance,
         },
         recentEvents: recentEvents.map((e) => ({
-          id:             e.id,
-          name:           e.name,
-          eventDate:      e.eventDate,
-          location:       e.location,
+          id:              e.id,
+          name:            e.name,
+          eventDate:       e.eventDate,
+          location:        e.location,
           attendanceCount: e._count.attendances,
         })),
-        mandalStats: mandalStats.map((m) => ({
-          id:          m.id,
-          name:        m.name,
-          bhaktoCount: m._count.bhaktos,
+        societyStats: societyStats.map((s) => ({
+          id:          s.id,
+          name:        s.name,
+          bhaktoCount: s._count.bhaktos,
+        })),
+        categoryStats: categoryStats.map((c) => ({
+          id:          c.id,
+          name:        c.name,
+          bhaktoCount: c._count.bhaktos,
         })),
       },
     });
