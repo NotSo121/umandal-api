@@ -84,9 +84,11 @@ const createBhakto = async (req, res) => {
     // For non-admin, force referenceBy to their own leader name
     let finalReferenceBy = referenceBy;
     if (req.user.role !== 'ADMIN') {
+      console.log('[createBhakto] userId:', req.user.sub, 'role:', req.user.role);
       const leaderName = await getLeaderName(req.user.sub);
+      console.log('[createBhakto] leaderName resolved:', leaderName);
       if (!leaderName) {
-        return res.status(403).json({ success: false, error: 'Your account is not linked to a leader' });
+        return res.status(403).json({ success: false, error: 'Your account is not linked to a leader. Please log out and log back in, then try again.' });
       }
       finalReferenceBy = leaderName;
     }
