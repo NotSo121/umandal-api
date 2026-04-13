@@ -41,7 +41,7 @@ const getStats = async (req, res) => {
         take: 5,
         select: {
           id: true, name: true, eventDate: true, location: true,
-          _count: { select: { attendances: true } },
+          _count: { select: { attendances: { where: { isPresent: true } } } },
         },
       }),
 
@@ -52,7 +52,7 @@ const getStats = async (req, res) => {
         take: 5,
         select: {
           id: true, name: true, eventDate: true, location: true,
-          _count: { select: { attendances: true } },
+          _count: { select: { attendances: { where: { isPresent: true } } } },
         },
       }),
 
