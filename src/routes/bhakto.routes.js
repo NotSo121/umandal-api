@@ -12,14 +12,19 @@ const {
 // All routes require JWT
 router.use(authMiddleware);
 
-router.get('/export',         exportBhakto);                              // JWT only
-router.get('/',               getAllBhakto);                              // JWT only
-router.get('/:id',            getBhaktoById);                            // JWT only
+router.get('/export',         exportBhakto);                                        // JWT only
+router.get('/',               getAllBhakto);                                        // JWT only
+router.get('/:id',            getBhaktoById);                                      // JWT only
 
-router.post('/import',        roleMiddleware, upload.single('file'), importBhakto);  // Admin
-router.post('/',              roleMiddleware, upload.single('photo'), createBhakto); // Admin
-router.put('/:id',            roleMiddleware, upload.single('photo'), updateBhakto); // Admin
-router.delete('/:id',         roleMiddleware, deleteBhakto);             // Admin
-router.patch('/:id/toggle',   roleMiddleware, toggleBhakto);             // Admin
+// Import still admin-only
+router.post('/import',        roleMiddleware, upload.single('file'), importBhakto); // Admin only
+
+// Create/Edit/Delete: JWT only — controller enforces ownership for non-admin
+router.post('/',              upload.single('photo'), createBhakto);
+router.put('/:id',            upload.single('photo'), updateBhakto);
+router.delete('/:id',         deleteBhakto);
+
+// Toggle: admin only
+router.patch('/:id/toggle',   roleMiddleware, toggleBhakto);                       // Admin only
 
 module.exports = router;
