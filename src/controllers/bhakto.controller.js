@@ -125,20 +125,26 @@ const createBhakto = async (req, res) => {
 };
 
 // Helper: resolve logged-in user's linked leader name
-// Uses raw SQL so it works regardless of which Prisma client version is deployed
 const getLeaderName = async (userId) => {
   try {
-    // Raw SQL join: User.bhaktoId → Bhakto.fullName
-    const rows = await prisma.$queryRaw`
-      SELECT b."fullName"
-      FROM "User" u
-      LEFT JOIN "Bhakto" b ON b.id = u."bhaktoId"
-      WHERE u.id = ${userId}
-      LIMIT 1
-    `;
-    return rows[0]?.fullName ?? null;
+    const uid = parseInt(userId);
+    console.log('[getLeaderName] looking up userId:', uid);
+    // Step 1: get the user's bhaktoId (scalar only)
+    const user = await prisma.user.findUnique({
+      where: { id: uid },
+      select: { bhaktoId: true },
+    });
+    console.log('[getLeaderName] user.bhaktoId:', user?.bhaktoId);
+    if (!user?.bhaktoId) return null;
+    // Step 2: get the bhakto's fullName
+    const bhakto = await prisma.bhakto.findUnique({
+      where: { id: user.bhaktoId },
+      select: { fullName: true },
+    });
+    console.log('[getLeaderName] bhakto.fullName:', bhakto?.fullName);
+    return bhakto?.fullName ?? null;
   } catch (e) {
-    console.error('getLeaderName error:', e);
+    console.error('[getLeaderName] error:', e.message);
     return null;
   }
 };
