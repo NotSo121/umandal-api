@@ -25,6 +25,8 @@ model User {
   password  String
   role      Role     @default(USER)
   isActive  Boolean  @default(true)
+  bhaktoId  Int?     @unique        // linked leader bhakto
+  bhakto    Bhakto?  @relation(fields: [bhaktoId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -69,6 +71,7 @@ model Bhakto {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   attendances Attendance[]
+  user        User?
 }
 
 model Event {

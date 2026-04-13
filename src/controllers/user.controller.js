@@ -3,17 +3,17 @@ const bcrypt = require('bcryptjs');
 
 const prisma = new PrismaClient();
 
+const userSelect = {
+  id: true, username: true, role: true, isActive: true, createdAt: true,
+  bhaktoId: true,
+  bhakto: { select: { id: true, fullName: true } },
+};
+
 // GET /api/users
 const getAllUsers = async (req, res) => {
   try {
     const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        username: true,
-        role: true,
-        isActive: true,
-        createdAt: true,
-      },
+      select: userSelect,
       orderBy: { createdAt: 'desc' },
     });
     return res.json({ success: true, data: users });
@@ -26,7 +26,7 @@ const getAllUsers = async (req, res) => {
 // POST /api/users
 const createUser = async (req, res) => {
   try {
-    const { username, password, role } = req.body;
+    const { username, password, role, bhaktoId } = req.body;
 
     if (!username || !password) {
       return res.status(400).json({ success: false, error: 'Username and password are required' });
@@ -37,15 +37,32 @@ const createUser = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Username already exists' });
     }
 
+    // Validate bhaktoId if provided — must be a leader
+    if (bhaktoId) {
+      const bhakto = await prisma.bhakto.findUnique({ where: { id: parseInt(bhaktoId) } });
+      if (!bhakto) {
+        return res.status(400).json({ success: false, error: 'Linked bhakto not found' });
+      }
+      if (!bhakto.isLeader) {
+        return res.status(400).json({ success: false, error: 'Linked bhakto must be a leader' });
+      }
+      // Check not already linked to another user
+      const alreadyLinked = await prisma.user.findUnique({ where: { bhaktoId: parseInt(bhaktoId) } });
+      if (alreadyLinked) {
+        return res.status(400).json({ success: false, error: 'This leader is already linked to another user' });
+      }
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await prisma.user.create({
       data: {
         username,
         password: hashedPassword,
-        role: role === 'ADMIN' ? 'ADMIN' : 'USER',
+        role:     role === 'ADMIN' ? 'ADMIN' : 'USER',
+        bhaktoId: bhaktoId ? parseInt(bhaktoId) : null,
       },
-      select: { id: true, username: true, role: true, isActive: true, createdAt: true },
+      select: userSelect,
     });
 
     return res.status(201).json({ success: true, data: user });
@@ -59,22 +76,43 @@ const createUser = async (req, res) => {
 const updateUser = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { username, password, role } = req.body;
+    const { username, password, role, bhaktoId } = req.body;
 
     const existing = await prisma.user.findUnique({ where: { id } });
     if (!existing) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
+    // Validate bhaktoId if being changed
+    const newBhaktoId = bhaktoId !== undefined
+      ? (bhaktoId === null || bhaktoId === '' ? null : parseInt(bhaktoId))
+      : undefined;
+
+    if (newBhaktoId) {
+      const bhakto = await prisma.bhakto.findUnique({ where: { id: newBhaktoId } });
+      if (!bhakto) {
+        return res.status(400).json({ success: false, error: 'Linked bhakto not found' });
+      }
+      if (!bhakto.isLeader) {
+        return res.status(400).json({ success: false, error: 'Linked bhakto must be a leader' });
+      }
+      // Check not already linked to a DIFFERENT user
+      const alreadyLinked = await prisma.user.findUnique({ where: { bhaktoId: newBhaktoId } });
+      if (alreadyLinked && alreadyLinked.id !== id) {
+        return res.status(400).json({ success: false, error: 'This leader is already linked to another user' });
+      }
+    }
+
     const updateData = {};
-    if (username) updateData.username = username;
-    if (role) updateData.role = role === 'ADMIN' ? 'ADMIN' : 'USER';
-    if (password) updateData.password = await bcrypt.hash(password, 10);
+    if (username)              updateData.username  = username;
+    if (role)                  updateData.role      = role === 'ADMIN' ? 'ADMIN' : 'USER';
+    if (password)              updateData.password  = await bcrypt.hash(password, 10);
+    if (newBhaktoId !== undefined) updateData.bhaktoId = newBhaktoId;
 
     const user = await prisma.user.update({
       where: { id },
       data: updateData,
-      select: { id: true, username: true, role: true, isActive: true, updatedAt: true },
+      select: userSelect,
     });
 
     return res.json({ success: true, data: user });
@@ -89,7 +127,6 @@ const deleteUser = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
 
-    // Prevent deleting yourself
     if (id === req.user.sub) {
       return res.status(400).json({ success: false, error: 'Cannot delete your own account' });
     }
@@ -125,7 +162,7 @@ const toggleUser = async (req, res) => {
     const user = await prisma.user.update({
       where: { id },
       data: { isActive: !existing.isActive },
-      select: { id: true, username: true, role: true, isActive: true },
+      select: userSelect,
     });
 
     return res.json({ success: true, data: user });

@@ -1,8 +1,17 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+// Helper: get logged-in user's linked leader name
+const getLeaderName = async (userId) => {
+  const u = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { bhakto: { select: { fullName: true } } },
+  });
+  return u?.bhakto?.fullName ?? null;
+};
+
 // GET /api/attendance/:eventId
-// Returns all bhakto with their attendance status for this event
+// ADMIN → all active bhaktos; USER → only their leader's bhaktos
 const getAttendanceByEvent = async (req, res) => {
   try {
     const eventId = parseInt(req.params.eventId);
@@ -12,24 +21,29 @@ const getAttendanceByEvent = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Event not found' });
     }
 
-    // Get all active bhakto
+    // Build bhakto filter based on role
+    const isAdmin = req.user.role === 'ADMIN';
+    let bhaktoWhere = { isActive: true };
+
+    if (!isAdmin) {
+      const leaderName = await getLeaderName(req.user.sub);
+      if (!leaderName) {
+        return res.json({ success: true, data: { event, attendance: [] } });
+      }
+      bhaktoWhere.referenceBy = leaderName;
+    }
+
     const bhaktos = await prisma.bhakto.findMany({
-      where: { isActive: true },
+      where: bhaktoWhere,
       select: { id: true, fullName: true, mobileNo: true, photoUrl: true },
       orderBy: { fullName: 'asc' },
     });
 
     // Get existing attendance records for this event
-    const attendances = await prisma.attendance.findMany({
-      where: { eventId },
-    });
-
+    const attendances = await prisma.attendance.findMany({ where: { eventId } });
     const attendanceMap = {};
-    attendances.forEach((a) => {
-      attendanceMap[a.bhaktoId] = a;
-    });
+    attendances.forEach((a) => { attendanceMap[a.bhaktoId] = a; });
 
-    // Merge bhakto list with attendance status
     const result = bhaktos.map((b) => ({
       bhaktoId:  b.id,
       fullName:  b.fullName,
@@ -47,8 +61,7 @@ const getAttendanceByEvent = async (req, res) => {
 };
 
 // POST /api/attendance/:eventId/save
-// Bulk upsert attendance for an event
-// Body: { attendance: [{ bhaktoId, isPresent, remarks }] }
+// ADMIN → can save for anyone; USER → only their own bhaktos
 const saveAttendance = async (req, res) => {
   try {
     const eventId = parseInt(req.params.eventId);
@@ -63,7 +76,24 @@ const saveAttendance = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Event not found' });
     }
 
-    // Bulk upsert using Prisma
+    // Non-admin: validate all bhaktoIds belong to their group
+    if (req.user.role !== 'ADMIN') {
+      const leaderName = await getLeaderName(req.user.sub);
+      if (!leaderName) {
+        return res.status(403).json({ success: false, error: 'Your account is not linked to a leader' });
+      }
+      const bhaktoIds = attendance.map((a) => parseInt(a.bhaktoId));
+      const valid = await prisma.bhakto.findMany({
+        where: { id: { in: bhaktoIds }, referenceBy: leaderName },
+        select: { id: true },
+      });
+      const validIds = new Set(valid.map((b) => b.id));
+      const invalid = bhaktoIds.filter((id) => !validIds.has(id));
+      if (invalid.length > 0) {
+        return res.status(403).json({ success: false, error: 'Access denied: some bhaktos do not belong to you' });
+      }
+    }
+
     const upserts = attendance.map((item) =>
       prisma.attendance.upsert({
         where: {
@@ -95,7 +125,6 @@ const saveAttendance = async (req, res) => {
 };
 
 // GET /api/attendance/bhakto/:bhaktoId
-// Attendance history of a single bhakto
 const getAttendanceByBhakto = async (req, res) => {
   try {
     const bhaktoId = parseInt(req.params.bhaktoId);
@@ -115,9 +144,9 @@ const getAttendanceByBhakto = async (req, res) => {
       orderBy: { event: { eventDate: 'desc' } },
     });
 
-    const total    = attendances.length;
-    const present  = attendances.filter((a) => a.isPresent).length;
-    const absent   = total - present;
+    const total   = attendances.length;
+    const present = attendances.filter((a) => a.isPresent).length;
+    const absent  = total - present;
 
     return res.json({
       success: true,

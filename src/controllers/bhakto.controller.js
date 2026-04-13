@@ -80,6 +80,16 @@ const createBhakto = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Full name is required' });
     }
 
+    // For non-admin, force referenceBy to their own leader name
+    let finalReferenceBy = referenceBy;
+    if (req.user.role !== 'ADMIN') {
+      const leaderName = await getLeaderName(req.user.sub);
+      if (!leaderName) {
+        return res.status(403).json({ success: false, error: 'Your account is not linked to a leader' });
+      }
+      finalReferenceBy = leaderName;
+    }
+
     let photoUrl = null;
     if (req.file) {
       photoUrl = await uploadPhoto(req.file.buffer, req.file.originalname, req.file.mimetype);
@@ -96,8 +106,8 @@ const createBhakto = async (req, res) => {
         gender:      gender      || 'MALE',
         categoryId:  categoryId  ? parseInt(categoryId)  : null,
         occupation,
-        referenceBy,
-        isLeader:    isLeader    === 'true' || isLeader  === true,
+        referenceBy: finalReferenceBy,
+        isLeader:    req.user.role === 'ADMIN' ? (isLeader === 'true' || isLeader === true) : false,
         isActive:    isActive    !== 'false' && isActive !== false,
         remarks,
         photoUrl,
@@ -111,6 +121,15 @@ const createBhakto = async (req, res) => {
   }
 };
 
+// Helper: resolve logged-in user's linked leader name
+const getLeaderName = async (userId) => {
+  const u = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { bhakto: { select: { fullName: true } } },
+  });
+  return u?.bhakto?.fullName ?? null;
+};
+
 // PUT /api/bhakto/:id
 const updateBhakto = async (req, res) => {
   try {
@@ -119,6 +138,14 @@ const updateBhakto = async (req, res) => {
     const existing = await prisma.bhakto.findUnique({ where: { id } });
     if (!existing) {
       return res.status(404).json({ success: false, error: 'Bhakto not found' });
+    }
+
+    // Ownership check for non-admin
+    if (req.user.role !== 'ADMIN') {
+      const leaderName = await getLeaderName(req.user.sub);
+      if (!leaderName || existing.referenceBy !== leaderName) {
+        return res.status(403).json({ success: false, error: 'Access denied: not your bhakto' });
+      }
     }
 
     const {
@@ -167,6 +194,14 @@ const deleteBhakto = async (req, res) => {
     const existing = await prisma.bhakto.findUnique({ where: { id } });
     if (!existing) {
       return res.status(404).json({ success: false, error: 'Bhakto not found' });
+    }
+
+    // Ownership check for non-admin
+    if (req.user.role !== 'ADMIN') {
+      const leaderName = await getLeaderName(req.user.sub);
+      if (!leaderName || existing.referenceBy !== leaderName) {
+        return res.status(403).json({ success: false, error: 'Access denied: not your bhakto' });
+      }
     }
 
     await prisma.bhakto.delete({ where: { id } });
