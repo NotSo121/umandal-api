@@ -2,12 +2,21 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 // Helper: get logged-in user's linked leader name
+// Uses raw SQL so it works regardless of which Prisma client version is deployed
 const getLeaderName = async (userId) => {
-  const u = await prisma.user.findUnique({
-    where: { id: userId },
-    include: { bhakto: { select: { fullName: true } } },
-  });
-  return u?.bhakto?.fullName ?? null;
+  try {
+    const rows = await prisma.$queryRaw`
+      SELECT b."fullName"
+      FROM "User" u
+      LEFT JOIN "Bhakto" b ON b.id = u."bhaktoId"
+      WHERE u.id = ${userId}
+      LIMIT 1
+    `;
+    return rows[0]?.fullName ?? null;
+  } catch (e) {
+    console.error('getLeaderName error:', e);
+    return null;
+  }
 };
 
 // GET /api/attendance/:eventId
