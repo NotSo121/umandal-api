@@ -84,35 +84,14 @@ const createBhakto = async (req, res) => {
     // For non-admin, force referenceBy to their own leader name
     let finalReferenceBy = referenceBy;
     if (req.user.role !== 'ADMIN') {
-      const uid = parseInt(req.user.sub);
-      // Step 1: get user row with bhaktoId
-      const userRow = await prisma.user.findUnique({
-        where: { id: uid },
-        select: { id: true, username: true, bhaktoId: true },
-      });
-      console.log('[createBhakto] userRow:', JSON.stringify(userRow));
-
-      if (!userRow?.bhaktoId) {
+      const leaderName = await getLeaderName(req.user.sub);
+      if (!leaderName) {
         return res.status(403).json({
           success: false,
-          error: `Not linked. userId=${uid}, bhaktoId=${userRow?.bhaktoId ?? 'null'}. Ask admin to link, then log out and log back in.`,
+          error: 'Your account is not linked to a leader. Ask admin to link you, then log out and log back in.',
         });
       }
-
-      // Step 2: get bhakto name
-      const bhaktoRow = await prisma.bhakto.findUnique({
-        where: { id: userRow.bhaktoId },
-        select: { fullName: true },
-      });
-      console.log('[createBhakto] bhaktoRow:', JSON.stringify(bhaktoRow));
-
-      if (!bhaktoRow) {
-        return res.status(403).json({
-          success: false,
-          error: `Bhakto not found for bhaktoId=${userRow.bhaktoId}`,
-        });
-      }
-      finalReferenceBy = bhaktoRow.fullName;
+      finalReferenceBy = leaderName;
     }
 
     let photoUrl = null;
