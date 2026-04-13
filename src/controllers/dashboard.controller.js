@@ -67,6 +67,30 @@ const getStats = async (req, res) => {
       }),
     ]);
 
+    // ── Upcoming birthdays (next 14 days) ──
+    const allWithDOB = await prisma.bhakto.findMany({
+      where:  { dateOfBirth: { not: null }, isActive: true },
+      select: { id: true, fullName: true, dateOfBirth: true, mobileNo: true, photoUrl: true },
+    });
+
+    const today    = new Date();
+    today.setHours(0, 0, 0, 0);
+    const in14Days = new Date(today);
+    in14Days.setDate(today.getDate() + 14);
+
+    const upcomingBirthdays = allWithDOB
+      .map((b) => {
+        const dob        = new Date(b.dateOfBirth);
+        let   bdayThisYr = new Date(today.getFullYear(), dob.getMonth(), dob.getDate());
+        if (bdayThisYr < today) {
+          bdayThisYr = new Date(today.getFullYear() + 1, dob.getMonth(), dob.getDate());
+        }
+        const daysUntil = Math.round((bdayThisYr - today) / (1000 * 60 * 60 * 24));
+        return { ...b, daysUntil, birthdayDate: bdayThisYr };
+      })
+      .filter((b) => b.daysUntil <= 14)
+      .sort((a, b) => a.daysUntil - b.daysUntil);
+
     return res.json({
       success: true,
       data: {
@@ -100,6 +124,14 @@ const getStats = async (req, res) => {
           id:          c.id,
           name:        c.name,
           bhaktoCount: c._count.bhaktos,
+        })),
+        upcomingBirthdays: upcomingBirthdays.map((b) => ({
+          id:          b.id,
+          fullName:    b.fullName,
+          mobileNo:    b.mobileNo,
+          photoUrl:    b.photoUrl,
+          dateOfBirth: b.dateOfBirth,
+          daysUntil:   b.daysUntil,
         })),
       },
     });
