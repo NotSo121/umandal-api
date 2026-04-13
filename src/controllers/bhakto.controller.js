@@ -7,7 +7,7 @@ const prisma = new PrismaClient();
 // GET /api/bhakto
 const getAllBhakto = async (req, res) => {
   try {
-    const { name, mandalId, societyId, categoryId, isActive, isLeader } = req.query;
+    const { name, mandalId, societyId, categoryId, isActive, isLeader, referenceBy } = req.query;
 
     const filters = {};
 
@@ -19,9 +19,10 @@ const getAllBhakto = async (req, res) => {
       ];
     }
 
-    if (mandalId)   filters.mandalId   = parseInt(mandalId);
-    if (societyId)  filters.societyId  = parseInt(societyId);
-    if (categoryId) filters.categoryId = parseInt(categoryId);
+    if (mandalId)    filters.mandalId    = parseInt(mandalId);
+    if (societyId)   filters.societyId   = parseInt(societyId);
+    if (categoryId)  filters.categoryId  = parseInt(categoryId);
+    if (referenceBy) filters.referenceBy = referenceBy;
     if (isActive  !== undefined) filters.isActive  = isActive  === 'true';
     if (isLeader  !== undefined) filters.isLeader  = isLeader  === 'true';
 
