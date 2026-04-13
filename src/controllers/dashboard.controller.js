@@ -11,6 +11,7 @@ const getStats = async (req, res) => {
       totalEvents,
       totalAttendance,
       presentAttendance,
+      upcomingEvents,
       recentEvents,
       societyStats,
       categoryStats,
@@ -33,15 +34,24 @@ const getStats = async (req, res) => {
       // Total present records
       prisma.attendance.count({ where: { isPresent: true } }),
 
-      // Last 5 events
+      // Upcoming events (future, next 5)
       prisma.event.findMany({
+        where:   { eventDate: { gte: new Date() } },
+        orderBy: { eventDate: 'asc' },
+        take: 5,
+        select: {
+          id: true, name: true, eventDate: true, location: true,
+          _count: { select: { attendances: true } },
+        },
+      }),
+
+      // Recent events (past, last 5)
+      prisma.event.findMany({
+        where:   { eventDate: { lt: new Date() } },
         orderBy: { eventDate: 'desc' },
         take: 5,
         select: {
-          id: true,
-          name: true,
-          eventDate: true,
-          location: true,
+          id: true, name: true, eventDate: true, location: true,
           _count: { select: { attendances: true } },
         },
       }),
@@ -108,6 +118,13 @@ const getStats = async (req, res) => {
           present: presentAttendance,
           absent:  totalAttendance - presentAttendance,
         },
+        upcomingEvents: upcomingEvents.map((e) => ({
+          id:              e.id,
+          name:            e.name,
+          eventDate:       e.eventDate,
+          location:        e.location,
+          attendanceCount: e._count.attendances,
+        })),
         recentEvents: recentEvents.map((e) => ({
           id:              e.id,
           name:            e.name,
