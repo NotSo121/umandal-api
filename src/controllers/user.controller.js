@@ -12,15 +12,24 @@ const userSelect = {
   bhakto: { select: { id: true, fullName: true } },
 };
 
-// Helper: can requester act on a target role?
-// Requester must outrank the target
-const canManage = (requesterRole, targetRole) =>
+// Can requester DELETE or DEACTIVATE a target? Must strictly outrank.
+const canDelete = (requesterRole, targetRole) =>
   getRank(requesterRole) > getRank(targetRole);
 
-// Helper: what's the highest role a requester can assign?
+// Can requester EDIT (password/role/bhakto) a target? Must be same rank or higher, but not SUPER_ADMIN target unless requester is SUPER_ADMIN.
+const canEdit = (requesterRole, targetRole) => {
+  if (targetRole === 'SUPER_ADMIN') return requesterRole === 'SUPER_ADMIN';
+  return getRank(requesterRole) >= getRank(targetRole);
+};
+
+// What's the highest role a requester can assign?
 const resolveRole = (requested, requesterRole) => {
-  if (requested === 'SUPER_ADMIN' && requesterRole === 'SUPER_ADMIN') return 'SUPER_ADMIN';
-  if (requested === 'ADMIN'       && requesterRole === 'SUPER_ADMIN') return 'ADMIN';
+  if (requested === 'SUPER_ADMIN') {
+    return requesterRole === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'USER';
+  }
+  if (requested === 'ADMIN') {
+    return (requesterRole === 'SUPER_ADMIN' || requesterRole === 'ADMIN') ? 'ADMIN' : 'USER';
+  }
   return 'USER';
 };
 
@@ -102,8 +111,8 @@ const updateUser = async (req, res) => {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
-    // Rank check: cannot edit a user of equal or higher rank
-    if (!canManage(req.user.role, existing.role)) {
+    // Edit check: cannot edit SUPER_ADMIN unless you are SUPER_ADMIN
+    if (!canEdit(req.user.role, existing.role)) {
       return res.status(403).json({ success: false, error: 'Access denied: insufficient privileges' });
     }
 
@@ -158,7 +167,7 @@ const deleteUser = async (req, res) => {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
-    if (!canManage(req.user.role, existing.role)) {
+    if (!canDelete(req.user.role, existing.role)) {
       return res.status(403).json({ success: false, error: 'Access denied: insufficient privileges' });
     }
 
@@ -184,7 +193,7 @@ const toggleUser = async (req, res) => {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
-    if (!canManage(req.user.role, existing.role)) {
+    if (!canDelete(req.user.role, existing.role)) {
       return res.status(403).json({ success: false, error: 'Access denied: insufficient privileges' });
     }
 
