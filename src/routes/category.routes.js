@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/auth.middleware');
-const roleMiddleware = require('../middleware/role.middleware');
+const { roleMiddleware } = require("../middleware/role.middleware");
 const { getAllCategories, createCategory, updateCategory, deleteCategory } = require('../controllers/category.controller');
 
 // All routes require JWT

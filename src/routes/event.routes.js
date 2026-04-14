@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/auth.middleware');
-const roleMiddleware = require('../middleware/role.middleware');
+const { roleMiddleware } = require("../middleware/role.middleware");
 const {
   getAllEvents, getEventById, createEvent, updateEvent, deleteEvent, toggleOpen,
 } = require('../controllers/event.controller');

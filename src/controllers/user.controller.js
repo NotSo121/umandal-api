@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
+const { getRank } = require('../middleware/role.middleware');
 
 const prisma = new PrismaClient();
 
@@ -9,6 +10,18 @@ const userSelect = {
   createdBy: true, updatedBy: true,
   bhaktoId: true,
   bhakto: { select: { id: true, fullName: true } },
+};
+
+// Helper: can requester act on a target role?
+// Requester must outrank the target
+const canManage = (requesterRole, targetRole) =>
+  getRank(requesterRole) > getRank(targetRole);
+
+// Helper: what's the highest role a requester can assign?
+const resolveRole = (requested, requesterRole) => {
+  if (requested === 'SUPER_ADMIN' && requesterRole === 'SUPER_ADMIN') return 'SUPER_ADMIN';
+  if (requested === 'ADMIN'       && requesterRole === 'SUPER_ADMIN') return 'ADMIN';
+  return 'USER';
 };
 
 // GET /api/users
@@ -39,6 +52,9 @@ const createUser = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Username already exists' });
     }
 
+    // Resolve what role this user can actually be assigned
+    const assignedRole = resolveRole(role, req.user.role);
+
     // Validate bhaktoId if provided — must be a leader
     if (bhaktoId) {
       const bhakto = await prisma.bhakto.findUnique({ where: { id: parseInt(bhaktoId) } });
@@ -60,7 +76,7 @@ const createUser = async (req, res) => {
       data: {
         username,
         password:  hashedPassword,
-        role:      role === 'ADMIN' ? 'ADMIN' : 'USER',
+        role:      assignedRole,
         bhaktoId:  bhaktoId ? parseInt(bhaktoId) : null,
         createdBy: req.user.username,
         updatedBy: req.user.username,
@@ -86,6 +102,11 @@ const updateUser = async (req, res) => {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
+    // Rank check: cannot edit a user of equal or higher rank
+    if (!canManage(req.user.role, existing.role)) {
+      return res.status(403).json({ success: false, error: 'Access denied: insufficient privileges' });
+    }
+
     const newBhaktoId = bhaktoId !== undefined
       ? (bhaktoId === null || bhaktoId === '' ? null : parseInt(bhaktoId))
       : undefined;
@@ -105,10 +126,10 @@ const updateUser = async (req, res) => {
     }
 
     const updateData = { updatedBy: req.user.username };
-    if (username)                  updateData.username  = username;
-    if (role)                      updateData.role      = role === 'ADMIN' ? 'ADMIN' : 'USER';
-    if (password)                  updateData.password  = await bcrypt.hash(password, 10);
-    if (newBhaktoId !== undefined) updateData.bhaktoId  = newBhaktoId;
+    if (username)                  updateData.username = username;
+    if (role)                      updateData.role     = resolveRole(role, req.user.role);
+    if (password)                  updateData.password = await bcrypt.hash(password, 10);
+    if (newBhaktoId !== undefined) updateData.bhaktoId = newBhaktoId;
 
     const user = await prisma.user.update({
       where: { id },
@@ -137,6 +158,10 @@ const deleteUser = async (req, res) => {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
+    if (!canManage(req.user.role, existing.role)) {
+      return res.status(403).json({ success: false, error: 'Access denied: insufficient privileges' });
+    }
+
     await prisma.user.delete({ where: { id } });
     return res.json({ success: true, data: 'User deleted successfully' });
   } catch (err) {
@@ -157,6 +182,10 @@ const toggleUser = async (req, res) => {
     const existing = await prisma.user.findUnique({ where: { id } });
     if (!existing) {
       return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    if (!canManage(req.user.role, existing.role)) {
+      return res.status(403).json({ success: false, error: 'Access denied: insufficient privileges' });
     }
 
     const user = await prisma.user.update({
