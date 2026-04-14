@@ -93,23 +93,13 @@ const getMe = async (req, res) => {
   }
 };
 
-// PUT /api/auth/me  — change own password (and optionally username)
+// PUT /api/auth/me  — update own username and/or password
 const updateMe = async (req, res) => {
   try {
-    const { currentPassword, newPassword } = req.body;
+    const { username, currentPassword, newPassword } = req.body;
 
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({
-        success: false,
-        error: 'Current password and new password are required',
-      });
-    }
-
-    if (newPassword.length < 6) {
-      return res.status(400).json({
-        success: false,
-        error: 'New password must be at least 6 characters',
-      });
+    if (!username && !newPassword) {
+      return res.status(400).json({ success: false, error: 'Nothing to update' });
     }
 
     const user = await prisma.user.findUnique({ where: { id: req.user.sub } });
@@ -117,18 +107,52 @@ const updateMe = async (req, res) => {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
-    const isMatch = await bcrypt.compare(currentPassword, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ success: false, error: 'Current password is incorrect' });
+    const updateData = {};
+
+    // ── Username change ──────────────────────────────────────────────────
+    if (username && username.trim() !== user.username) {
+      const taken = await prisma.user.findUnique({ where: { username: username.trim() } });
+      if (taken) {
+        return res.status(400).json({ success: false, error: 'Username already taken' });
+      }
+      updateData.username = username.trim();
     }
 
-    const hashed = await bcrypt.hash(newPassword, 10);
-    await prisma.user.update({
-      where: { id: req.user.sub },
-      data:  { password: hashed },
-    });
+    // ── Password change ──────────────────────────────────────────────────
+    if (newPassword) {
+      if (!currentPassword) {
+        return res.status(400).json({
+          success: false,
+          error: 'Current password is required to change password',
+        });
+      }
+      if (newPassword.length < 6) {
+        return res.status(400).json({
+          success: false,
+          error: 'New password must be at least 6 characters',
+        });
+      }
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatch) {
+        return res.status(400).json({ success: false, error: 'Current password is incorrect' });
+      }
+      updateData.password = await bcrypt.hash(newPassword, 10);
+    }
 
-    return res.json({ success: true, data: 'Password updated successfully' });
+    if (Object.keys(updateData).length === 0) {
+      return res.json({ success: true, data: { message: 'No changes made' } });
+    }
+
+    await prisma.user.update({ where: { id: req.user.sub }, data: updateData });
+
+    return res.json({
+      success: true,
+      data: {
+        usernameChanged: !!updateData.username,
+        passwordChanged: !!updateData.password,
+        newUsername:     updateData.username ?? user.username,
+      },
+    });
   } catch (err) {
     console.error('UpdateMe error:', err);
     return res.status(500).json({ success: false, error: 'Internal server error' });
