@@ -298,7 +298,7 @@ const importBhakto = async (req, res) => {
 // GET /api/bhakto/export
 const exportBhakto = async (req, res) => {
   try {
-    const { name, societyId, categoryId, isActive, isLeader, referenceBy, columns } = req.query;
+    const { name, societyId, categoryId, isActive, isLeader, referenceBy, columns, srNo } = req.query;
 
     // Build filters (same logic as getAllBhakto)
     const filters = {};
@@ -345,8 +345,10 @@ const exportBhakto = async (req, res) => {
       ? columns.split(',').map((c) => c.trim()).filter((c) => allColumns[c])
       : Object.keys(allColumns);
 
+    const includeSrNo = srNo === 'true';
     const data = bhaktos.map((b, index) => {
-      const row = { '#': index + 1 };
+      const row = {};
+      if (includeSrNo) row['#'] = index + 1;
       for (const col of selectedColumns) {
         row[col] = allColumns[col](b);
       }
