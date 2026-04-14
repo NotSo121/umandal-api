@@ -95,6 +95,8 @@ const deleteEvent = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Event not found' });
     }
 
+    // Delete attendance records first (FK constraint)
+    await prisma.attendance.deleteMany({ where: { eventId: id } });
     await prisma.event.delete({ where: { id } });
 
     return res.json({ success: true, data: 'Event deleted successfully' });
