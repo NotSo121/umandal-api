@@ -72,6 +72,8 @@ model Bhakto {
   remarks     String?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+  createdBy   String?
+  updatedBy   String?
   attendances Attendance[]
   user        User?
 }
