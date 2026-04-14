@@ -8,8 +8,9 @@ const eventRoutes      = require('./routes/event.routes');
 const attendanceRoutes = require('./routes/attendance.routes');
 const userRoutes       = require('./routes/user.routes');
 const dashboardRoutes  = require('./routes/dashboard.routes');
-const categoryRoutes   = require('./routes/category.routes');
-const societyRoutes    = require('./routes/society.routes');
+const categoryRoutes      = require('./routes/category.routes');
+const societyRoutes       = require('./routes/society.routes');
+const notificationRoutes  = require('./routes/notification.routes');
 
 const app = express();
 
@@ -23,8 +24,9 @@ app.use('/api/events',     eventRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/users',      userRoutes);
 app.use('/api/dashboard',  dashboardRoutes);
-app.use('/api/category',   categoryRoutes);
-app.use('/api/society',    societyRoutes);
+app.use('/api/category',      categoryRoutes);
+app.use('/api/society',       societyRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Health check
 app.get('/', (req, res) => {
