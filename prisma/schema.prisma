@@ -29,6 +29,8 @@ model User {
   bhakto    Bhakto?  @relation(fields: [bhaktoId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
 }
 
 model Mandal {
