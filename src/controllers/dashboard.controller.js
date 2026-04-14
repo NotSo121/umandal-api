@@ -77,6 +77,26 @@ const getStats = async (req, res) => {
       }),
     ]);
 
+    // ── Pocket count for non-admin ──────────────────────────────────────────
+    let pocketCount = null;
+    if (req.user.role !== 'ADMIN') {
+      const userRow = await prisma.user.findUnique({
+        where:  { id: req.user.sub },
+        select: { bhaktoId: true },
+      });
+      if (userRow?.bhaktoId) {
+        const leaderBhakto = await prisma.bhakto.findUnique({
+          where:  { id: userRow.bhaktoId },
+          select: { fullName: true },
+        });
+        if (leaderBhakto?.fullName) {
+          pocketCount = await prisma.bhakto.count({
+            where: { referenceBy: leaderBhakto.fullName },
+          });
+        }
+      }
+    }
+
     // ── Upcoming birthdays (next 14 days) ──
     const allWithDOB = await prisma.bhakto.findMany({
       where:  { dateOfBirth: { not: null }, isActive: true },
@@ -142,6 +162,7 @@ const getStats = async (req, res) => {
           name:        c.name,
           bhaktoCount: c._count.bhaktos,
         })),
+        pocketCount,
         upcomingBirthdays: upcomingBirthdays.map((b) => ({
           id:          b.id,
           fullName:    b.fullName,
