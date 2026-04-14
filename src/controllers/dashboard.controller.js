@@ -125,7 +125,7 @@ const getStats = async (req, res) => {
       success: true,
       data: {
         bhakto: {
-          total:    totalBhakto,
+          total:    activeBhakto,
           active:   activeBhakto,
           inactive: totalBhakto - activeBhakto,
           leaders:  totalLeaders,
