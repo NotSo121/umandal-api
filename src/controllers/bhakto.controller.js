@@ -295,34 +295,65 @@ const importBhakto = async (req, res) => {
 // GET /api/bhakto/export
 const exportBhakto = async (req, res) => {
   try {
+    const { name, societyId, categoryId, isActive, isLeader, referenceBy, columns } = req.query;
+
+    // Build filters (same logic as getAllBhakto)
+    const filters = {};
+    if (name) {
+      filters.OR = [
+        { fullName: { contains: name, mode: 'insensitive' } },
+        { mobileNo: { contains: name, mode: 'insensitive' } },
+      ];
+    }
+    if (societyId)   filters.societyId   = parseInt(societyId);
+    if (categoryId)  filters.categoryId  = parseInt(categoryId);
+    if (referenceBy) filters.referenceBy = referenceBy;
+    if (isActive  !== undefined && isActive  !== '') filters.isActive  = isActive  === 'true';
+    if (isLeader  !== undefined && isLeader  !== '') filters.isLeader  = isLeader  === 'true';
+
     const bhaktos = await prisma.bhakto.findMany({
+      where: filters,
       include: {
-        mandal:   { select: { name: true } },
-        category: { select: { name: true } },
+        mandal:   { select: { id: true, name: true } },
+        category: { select: { id: true, name: true } },
+        society:  { select: { id: true, name: true } },
       },
       orderBy: { fullName: 'asc' },
     });
 
-    const data = bhaktos.map((b) => ({
-      ID:          b.id,
-      'Full Name': b.fullName,
-      'House No':  b.houseNo   || '',
-      Society:     b.society   || '',
-      Mandal:      b.mandal?.name   || '',
-      Category:    b.category?.name || '',
-      Mobile:      b.mobileNo  || '',
-      DOB:         b.dateOfBirth ? b.dateOfBirth.toISOString().split('T')[0] : '',
-      Gender:      b.gender,
-      Occupation:  b.occupation  || '',
-      'Reference By': b.referenceBy || '',
-      'Is Leader': b.isLeader ? 'Yes' : 'No',
-      'Is Active': b.isActive ? 'Yes' : 'No',
-      Remarks:     b.remarks  || '',
-    }));
+    // All available columns with extractor functions
+    const allColumns = {
+      'Full Name':    (b) => b.fullName,
+      'Mobile':       (b) => b.mobileNo      || '',
+      'House No':     (b) => b.houseNo        || '',
+      'Society':      (b) => b.society?.name  || '',
+      'Gender':       (b) => b.gender,
+      'DOB':          (b) => b.dateOfBirth ? b.dateOfBirth.toISOString().split('T')[0] : '',
+      'Occupation':   (b) => b.occupation     || '',
+      'Category':     (b) => b.category?.name || '',
+      'Reference By': (b) => b.referenceBy    || '',
+      'Is Leader':    (b) => b.isLeader ? 'Yes' : 'No',
+      'Is Active':    (b) => b.isActive  ? 'Yes' : 'No',
+      'Remarks':      (b) => b.remarks        || '',
+    };
+
+    // Use requested columns in order, or all by default
+    const selectedColumns = columns
+      ? columns.split(',').map((c) => c.trim()).filter((c) => allColumns[c])
+      : Object.keys(allColumns);
+
+    const data = bhaktos.map((b) => {
+      const row = {};
+      for (const col of selectedColumns) {
+        row[col] = allColumns[col](b);
+      }
+      return row;
+    });
 
     const buffer = generateExcel(data);
+    const timestamp = new Date().toISOString().split('T')[0];
 
-    res.setHeader('Content-Disposition', 'attachment; filename=bhakto-export.xlsx');
+    res.setHeader('Content-Disposition', `attachment; filename=bhakto-export-${timestamp}.xlsx`);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     return res.send(buffer);
   } catch (err) {
