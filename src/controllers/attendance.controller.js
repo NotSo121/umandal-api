@@ -87,6 +87,11 @@ const saveAttendance = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Event not found' });
     }
 
+    // Attendance locked check
+    if (!event.isOpen) {
+      return res.status(403).json({ success: false, error: 'Attendance is locked for this event. Contact admin to unlock.' });
+    }
+
     // Non-admin: validate all bhaktoIds belong to their group
     if (req.user.role !== 'ADMIN') {
       const leaderName = await getLeaderName(req.user.sub);

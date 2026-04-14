@@ -85,6 +85,7 @@ model Event {
   location    String?
   description String?
   isActive    Boolean      @default(true)
+  isOpen      Boolean      @default(true)
   createdAt   DateTime     @default(now())
   attendances Attendance[]
 }

@@ -104,4 +104,27 @@ const deleteEvent = async (req, res) => {
   }
 };
 
-module.exports = { getAllEvents, getEventById, createEvent, updateEvent, deleteEvent };
+// PATCH /api/events/:id/toggle-open  (admin only)
+const toggleOpen = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+
+    const existing = await prisma.event.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Event not found' });
+    }
+
+    const event = await prisma.event.update({
+      where: { id },
+      data: { isOpen: !existing.isOpen },
+      select: { id: true, name: true, isOpen: true },
+    });
+
+    return res.json({ success: true, data: event });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+};
+
+module.exports = { getAllEvents, getEventById, createEvent, updateEvent, deleteEvent, toggleOpen };

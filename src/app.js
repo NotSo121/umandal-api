@@ -11,6 +11,7 @@ const dashboardRoutes  = require('./routes/dashboard.routes');
 const categoryRoutes      = require('./routes/category.routes');
 const societyRoutes       = require('./routes/society.routes');
 const notificationRoutes  = require('./routes/notification.routes');
+const reportRoutes        = require('./routes/report.routes');
 
 const app = express();
 
@@ -27,6 +28,7 @@ app.use('/api/dashboard',  dashboardRoutes);
 app.use('/api/category',      categoryRoutes);
 app.use('/api/society',       societyRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/reports',       reportRoutes);
 
 // Health check
 app.get('/', (req, res) => {
