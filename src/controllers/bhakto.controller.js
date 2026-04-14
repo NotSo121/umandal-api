@@ -115,6 +115,8 @@ const createBhakto = async (req, res) => {
         isActive:    isActive    !== 'false' && isActive !== false,
         remarks,
         photoUrl,
+        createdBy: req.user.username,
+        updatedBy: req.user.username,
       },
     });
 
@@ -196,6 +198,7 @@ const updateBhakto = async (req, res) => {
         isActive:    isActive  !== undefined ? (isActive  === 'true' || isActive  === true) : existing.isActive,
         remarks,
         photoUrl,
+        updatedBy: req.user.username,
       },
     });
 
