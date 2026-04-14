@@ -93,4 +93,46 @@ const getMe = async (req, res) => {
   }
 };
 
-module.exports = { login, getMe };
+// PUT /api/auth/me  — change own password (and optionally username)
+const updateMe = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'Current password and new password are required',
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'New password must be at least 6 characters',
+      });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.sub } });
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ success: false, error: 'Current password is incorrect' });
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: req.user.sub },
+      data:  { password: hashed },
+    });
+
+    return res.json({ success: true, data: 'Password updated successfully' });
+  } catch (err) {
+    console.error('UpdateMe error:', err);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+};
+
+module.exports = { login, getMe, updateMe };
