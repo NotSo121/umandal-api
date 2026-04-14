@@ -345,8 +345,8 @@ const exportBhakto = async (req, res) => {
       ? columns.split(',').map((c) => c.trim()).filter((c) => allColumns[c])
       : Object.keys(allColumns);
 
-    const data = bhaktos.map((b) => {
-      const row = {};
+    const data = bhaktos.map((b, index) => {
+      const row = { '#': index + 1 };
       for (const col of selectedColumns) {
         row[col] = allColumns[col](b);
       }
