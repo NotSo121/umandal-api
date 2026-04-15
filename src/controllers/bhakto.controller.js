@@ -425,6 +425,31 @@ const importBhakto = async (req, res) => {
   }
 };
 
+// GET /api/bhakto/import/sample — returns a sample .xlsx the user can fill in
+const getBhaktoImportSample = (req, res) => {
+  const sampleRows = [
+    {
+      'Full Name':    'Ramesh Patel',
+      'Mobile':       '9876543210',
+      'House No':     'B-12',
+      'Society':      'Krishna Society',  // must match exact name in system
+      'Gender':       'MALE',
+      'DOB':          '1990-05-15',       // YYYY-MM-DD or DD/MM/YYYY
+      'Occupation':   'Business',
+      'Category':     'Yuva',             // must match exact name in system
+      'Reference By': 'Leader Full Name', // optional — leader's full name
+      'Is Leader':    'No',
+      'Is Active':    'Yes',
+      'Remarks':      '',
+    },
+  ];
+
+  const buffer = generateExcel(sampleRows);
+  res.setHeader('Content-Disposition', 'attachment; filename=bhakto-import-sample.xlsx');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  return res.send(buffer);
+};
+
 // GET /api/bhakto/export
 const exportBhakto = async (req, res) => {
   try {
@@ -500,5 +525,5 @@ const exportBhakto = async (req, res) => {
 module.exports = {
   getAllBhakto, getBhaktoById, createBhakto,
   updateBhakto, deleteBhakto, toggleBhakto,
-  importBhakto, exportBhakto,
+  importBhakto, exportBhakto, getBhaktoImportSample,
 };
