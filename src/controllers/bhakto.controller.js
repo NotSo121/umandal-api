@@ -228,6 +228,16 @@ const deleteBhakto = async (req, res) => {
       }
     }
 
+    // 1. Unlink any user whose bhaktoId points here (unique FK — must clear first)
+    await prisma.user.updateMany({
+      where: { bhaktoId: id },
+      data:  { bhaktoId: null },
+    });
+
+    // 2. Delete all attendance records for this bhakto (FK constraint)
+    await prisma.attendance.deleteMany({ where: { bhaktoId: id } });
+
+    // 3. Now safe to delete
     await prisma.bhakto.delete({ where: { id } });
 
     return res.json({ success: true, data: 'Bhakto deleted successfully' });
@@ -314,14 +324,29 @@ const importBhakto = async (req, res) => {
     let skipped  = 0;
     const errors = [];
 
-    // Pre-load societies and categories once for fast in-memory lookup (avoids N+1 queries)
-    const [allSocieties, allCategories] = await Promise.all([
+    // Pre-load lookup tables once (avoids N+1 queries)
+    const [allSocieties, allCategories, existingBhaktos] = await Promise.all([
       prisma.society.findMany({ select: { id: true, name: true } }),
       prisma.category.findMany({ select: { id: true, name: true } }),
+      prisma.bhakto.findMany({ select: { fullName: true, dateOfBirth: true, mobileNo: true } }),
     ]);
 
     const societyMap  = new Map(allSocieties.map(s => [s.name.trim().toLowerCase(),  s.id]));
     const categoryMap = new Map(allCategories.map(c => [c.name.trim().toLowerCase(), c.id]));
+
+    // Duplicate detection sets — checked per row before inserting
+    // Primary:  fullName (lower) + DOB string  → catches same person with known birthday
+    // Fallback: fullName (lower) + mobileNo    → catches same person when DOB is missing
+    const byNameDob    = new Set(
+      existingBhaktos
+        .filter(b => b.dateOfBirth)
+        .map(b => `${b.fullName.trim().toLowerCase()}|${b.dateOfBirth.toISOString().split('T')[0]}`)
+    );
+    const byNameMobile = new Set(
+      existingBhaktos
+        .filter(b => b.mobileNo)
+        .map(b => `${b.fullName.trim().toLowerCase()}|${b.mobileNo.trim()}`)
+    );
 
     for (let i = 0; i < rows.length; i++) {
       const row    = rows[i];
@@ -332,6 +357,27 @@ const importBhakto = async (req, res) => {
         errors.push({ row: rowNum, name: '-', reason: 'Full Name is required' });
         skipped++;
         continue;
+      }
+
+      // Duplicate check — primary: name+DOB; fallback: name+mobile (intra-batch aware)
+      const mobileRaw = row['Mobile'] ? String(row['Mobile']).trim() : null;
+      const dobRawForCheck = row['DOB'];
+      const dobForCheck = parseDOB(dobRawForCheck);
+
+      if (dobForCheck) {
+        const key = `${name.toLowerCase()}|${dobForCheck.toISOString().split('T')[0]}`;
+        if (byNameDob.has(key)) {
+          errors.push({ row: rowNum, name, reason: 'Duplicate: same name and date of birth already exists' });
+          skipped++;
+          continue;
+        }
+      } else if (mobileRaw) {
+        const key = `${name.toLowerCase()}|${mobileRaw}`;
+        if (byNameMobile.has(key)) {
+          errors.push({ row: rowNum, name, reason: 'Duplicate: same name and mobile already exists' });
+          skipped++;
+          continue;
+        }
       }
 
       // Society lookup — skip row if a society name is given but not found in DB
@@ -407,6 +453,12 @@ const importBhakto = async (req, res) => {
             updatedBy: req.user.username,
           },
         });
+        // Update sets so duplicate rows within the same file are also caught
+        if (dateOfBirth) {
+          byNameDob.add(`${name.toLowerCase()}|${dateOfBirth.toISOString().split('T')[0]}`);
+        } else if (mobileNo) {
+          byNameMobile.add(`${name.toLowerCase()}|${mobileNo.trim()}`);
+        }
         imported++;
       } catch (rowErr) {
         console.error(`[importBhakto] row ${rowNum} error:`, rowErr.message);
