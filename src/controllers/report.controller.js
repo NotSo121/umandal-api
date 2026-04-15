@@ -36,7 +36,7 @@ const getBhaktoIdsForLeader = async (leaderName) => {
 const getEventReport = async (req, res) => {
   try {
     const { referenceBy } = req.query;
-    const isAdmin = req.user.role === 'ADMIN';
+    const isAdmin = ['ADMIN','SUPER_ADMIN'].includes(req.user.role);
 
     // Determine the leader filter
     let bhaktoIds = null; // null = no filter (all)
@@ -96,7 +96,7 @@ const getEventReportDetail = async (req, res) => {
   try {
     const eventId = parseInt(req.params.eventId);
     const { referenceBy } = req.query;
-    const isAdmin = req.user.role === 'ADMIN';
+    const isAdmin = ['ADMIN','SUPER_ADMIN'].includes(req.user.role);
 
     const event = await prisma.event.findUnique({ where: { id: eventId } });
     if (!event) {

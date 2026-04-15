@@ -33,7 +33,7 @@ const getAttendanceByEvent = async (req, res) => {
     }
 
     // Build bhakto filter based on role
-    const isAdmin = req.user.role === 'ADMIN';
+    const isAdmin = ['ADMIN','SUPER_ADMIN'].includes(req.user.role);
     let bhaktoWhere = { isActive: true };
 
     if (!isAdmin) {
@@ -93,7 +93,7 @@ const saveAttendance = async (req, res) => {
     }
 
     // Non-admin: validate all bhaktoIds belong to their group
-    if (req.user.role !== 'ADMIN') {
+    if (!['ADMIN','SUPER_ADMIN'].includes(req.user.role)) {
       const leaderName = await getLeaderName(req.user.sub);
       if (!leaderName) {
         return res.status(403).json({ success: false, error: 'Your account is not linked to a leader' });

@@ -43,7 +43,7 @@ const getNotifications = async (req, res) => {
     const birthdayFilter = { dateOfBirth: { not: null }, isActive: true };
 
     // Non-admin: only their pocket
-    if (req.user.role !== 'ADMIN') {
+    if (!['ADMIN','SUPER_ADMIN'].includes(req.user.role)) {
       const leaderName = await getLeaderName(req.user.sub);
       if (leaderName) birthdayFilter.referenceBy = leaderName;
     }

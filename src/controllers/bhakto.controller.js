@@ -83,7 +83,7 @@ const createBhakto = async (req, res) => {
 
     // For non-admin, force referenceBy to their own leader name
     let finalReferenceBy = referenceBy;
-    if (req.user.role !== 'ADMIN') {
+    if (!['ADMIN','SUPER_ADMIN'].includes(req.user.role)) {
       const leaderName = await getLeaderName(req.user.sub);
       if (!leaderName) {
         return res.status(403).json({
@@ -111,7 +111,7 @@ const createBhakto = async (req, res) => {
         categoryId:  categoryId  ? parseInt(categoryId)  : null,
         occupation,
         referenceBy: finalReferenceBy,
-        isLeader:    req.user.role === 'ADMIN' ? (isLeader === 'true' || isLeader === true) : false,
+        isLeader:    ['ADMIN','SUPER_ADMIN'].includes(req.user.role) ? (isLeader === 'true' || isLeader === true) : false,
         isActive:    isActive    !== 'false' && isActive !== false,
         remarks,
         photoUrl,
@@ -163,7 +163,7 @@ const updateBhakto = async (req, res) => {
     }
 
     // Ownership check for non-admin
-    if (req.user.role !== 'ADMIN') {
+    if (!['ADMIN','SUPER_ADMIN'].includes(req.user.role)) {
       const leaderName = await getLeaderName(req.user.sub);
       if (!leaderName || existing.referenceBy !== leaderName) {
         return res.status(403).json({ success: false, error: 'Access denied: not your bhakto' });
@@ -220,7 +220,7 @@ const deleteBhakto = async (req, res) => {
     }
 
     // Ownership check for non-admin
-    if (req.user.role !== 'ADMIN') {
+    if (!['ADMIN','SUPER_ADMIN'].includes(req.user.role)) {
       const leaderName = await getLeaderName(req.user.sub);
       if (!leaderName || existing.referenceBy !== leaderName) {
         return res.status(403).json({ success: false, error: 'Access denied: not your bhakto' });

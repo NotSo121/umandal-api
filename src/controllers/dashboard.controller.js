@@ -79,7 +79,7 @@ const getStats = async (req, res) => {
 
     // ── Pocket count for non-admin ──────────────────────────────────────────
     let pocketCount = null;
-    if (req.user.role !== 'ADMIN') {
+    if (!['ADMIN','SUPER_ADMIN'].includes(req.user.role)) {
       const userRow = await prisma.user.findUnique({
         where:  { id: req.user.sub },
         select: { bhaktoId: true },
