@@ -328,20 +328,14 @@ const importBhakto = async (req, res) => {
     const [allSocieties, allCategories, existingBhaktos] = await Promise.all([
       prisma.society.findMany({ select: { id: true, name: true } }),
       prisma.category.findMany({ select: { id: true, name: true } }),
-      prisma.bhakto.findMany({ select: { fullName: true, dateOfBirth: true, mobileNo: true } }),
+      prisma.bhakto.findMany({ select: { fullName: true, mobileNo: true } }),
     ]);
 
     const societyMap  = new Map(allSocieties.map(s => [s.name.trim().toLowerCase(),  s.id]));
     const categoryMap = new Map(allCategories.map(c => [c.name.trim().toLowerCase(), c.id]));
 
-    // Duplicate detection sets — checked per row before inserting
-    // Primary:  fullName (lower) + DOB string  → catches same person with known birthday
-    // Fallback: fullName (lower) + mobileNo    → catches same person when DOB is missing
-    const byNameDob    = new Set(
-      existingBhaktos
-        .filter(b => b.dateOfBirth)
-        .map(b => `${b.fullName.trim().toLowerCase()}|${b.dateOfBirth.toISOString().split('T')[0]}`)
-    );
+    // Duplicate detection: fullName (case-insensitive) + mobileNo
+    // Only checked when mobile is present in the row; intra-batch aware
     const byNameMobile = new Set(
       existingBhaktos
         .filter(b => b.mobileNo)
@@ -359,19 +353,9 @@ const importBhakto = async (req, res) => {
         continue;
       }
 
-      // Duplicate check — primary: name+DOB; fallback: name+mobile (intra-batch aware)
+      // Duplicate check: fullName + mobileNo (only when mobile is present in this row)
       const mobileRaw = row['Mobile'] ? String(row['Mobile']).trim() : null;
-      const dobRawForCheck = row['DOB'];
-      const dobForCheck = parseDOB(dobRawForCheck);
-
-      if (dobForCheck) {
-        const key = `${name.toLowerCase()}|${dobForCheck.toISOString().split('T')[0]}`;
-        if (byNameDob.has(key)) {
-          errors.push({ row: rowNum, name, reason: 'Duplicate: same name and date of birth already exists' });
-          skipped++;
-          continue;
-        }
-      } else if (mobileRaw) {
+      if (mobileRaw) {
         const key = `${name.toLowerCase()}|${mobileRaw}`;
         if (byNameMobile.has(key)) {
           errors.push({ row: rowNum, name, reason: 'Duplicate: same name and mobile already exists' });
@@ -453,10 +437,8 @@ const importBhakto = async (req, res) => {
             updatedBy: req.user.username,
           },
         });
-        // Update sets so duplicate rows within the same file are also caught
-        if (dateOfBirth) {
-          byNameDob.add(`${name.toLowerCase()}|${dateOfBirth.toISOString().split('T')[0]}`);
-        } else if (mobileNo) {
+        // Update set so duplicate rows within the same file are also caught
+        if (mobileNo) {
           byNameMobile.add(`${name.toLowerCase()}|${mobileNo.trim()}`);
         }
         imported++;
