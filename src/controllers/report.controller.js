@@ -234,4 +234,81 @@ const getLeaderDetail = async (req, res) => {
   }
 };
 
-module.exports = { getEventReport, getEventReportDetail, getLeaderSummary, getLeaderDetail };
+// GET /api/reports/series
+// Returns distinct seriesTag values (non-null) from events — for dropdown population
+const getSeriesTags = async (req, res) => {
+  try {
+    const rows = await prisma.event.findMany({
+      where: { seriesTag: { not: null }, isActive: true },
+      select: { seriesTag: true },
+      distinct: ['seriesTag'],
+      orderBy: { seriesTag: 'asc' },
+    });
+    const tags = rows.map((r) => r.seriesTag);
+    return res.json({ success: true, data: tags });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+};
+
+// GET /api/reports/series/:tag
+// Returns all events with that seriesTag, each with attendance stats.
+// Same scoping rules as getEventReport:
+//   SUPER_ADMIN: global
+//   ADMIN + ?myTeam=true: pocket scoped
+//   USER: pocket scoped
+const getSeriesReport = async (req, res) => {
+  try {
+    const tag = req.params.tag;
+    const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
+    const isAdmin      = ['ADMIN', 'SUPER_ADMIN'].includes(req.user.role);
+    const myTeam       = req.query.myTeam === 'true';
+
+    let bhaktoIds = null;
+    if (isSuperAdmin) {
+      // no scoping
+    } else if (!isAdmin || myTeam) {
+      const leaderName = await getLeaderName(req.user.sub);
+      if (!leaderName) return res.json({ success: true, data: [] });
+      bhaktoIds = await getBhaktoIdsForLeader(leaderName);
+    }
+
+    const events = await prisma.event.findMany({
+      where: { seriesTag: tag, isActive: true },
+      orderBy: { eventDate: 'asc' },
+    });
+
+    const result = await Promise.all(
+      events.map(async (event) => {
+        const attendanceWhere = { eventId: event.id };
+        if (bhaktoIds !== null) {
+          attendanceWhere.bhaktoId = { in: bhaktoIds };
+        }
+
+        const [total, present] = await Promise.all([
+          prisma.attendance.count({ where: attendanceWhere }),
+          prisma.attendance.count({ where: { ...attendanceWhere, isPresent: true } }),
+        ]);
+
+        const rate = total > 0 ? Math.round((present / total) * 100) : 0;
+
+        return {
+          eventId:        event.id,
+          name:           event.name,
+          eventDate:      event.eventDate,
+          totalBhakto:    total,
+          totalPresent:   present,
+          attendanceRate: rate,
+        };
+      })
+    );
+
+    return res.json({ success: true, data: result });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+};
+
+module.exports = { getEventReport, getEventReportDetail, getLeaderSummary, getLeaderDetail, getSeriesTags, getSeriesReport };

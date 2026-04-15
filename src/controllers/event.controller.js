@@ -34,7 +34,7 @@ const getEventById = async (req, res) => {
 // POST /api/events
 const createEvent = async (req, res) => {
   try {
-    const { name, eventDate, location, description } = req.body;
+    const { name, eventDate, location, description, seriesTag } = req.body;
 
     if (!name || !eventDate) {
       return res.status(400).json({ success: false, error: 'Name and event date are required' });
@@ -46,6 +46,7 @@ const createEvent = async (req, res) => {
         eventDate: new Date(eventDate),
         location,
         description,
+        seriesTag: seriesTag || null,
       },
     });
 
@@ -60,7 +61,7 @@ const createEvent = async (req, res) => {
 const updateEvent = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { name, eventDate, location, description, isActive } = req.body;
+    const { name, eventDate, location, description, isActive, seriesTag } = req.body;
 
     const existing = await prisma.event.findUnique({ where: { id } });
     if (!existing) {
@@ -75,6 +76,7 @@ const updateEvent = async (req, res) => {
         location:    location    ?? existing.location,
         description: description ?? existing.description,
         isActive:    isActive    !== undefined ? Boolean(isActive) : existing.isActive,
+        seriesTag:   seriesTag   !== undefined ? (seriesTag || null) : existing.seriesTag,
       },
     });
 
