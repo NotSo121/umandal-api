@@ -12,14 +12,11 @@ const userSelect = {
   bhakto: { select: { id: true, fullName: true } },
 };
 
-// Can requester DELETE or DEACTIVATE a target? Must strictly outrank.
-const canDelete = (requesterRole, targetRole) =>
-  getRank(requesterRole) > getRank(targetRole);
-
-// Can requester EDIT (password/role/bhakto) a target? Must be same rank or higher, but not SUPER_ADMIN target unless requester is SUPER_ADMIN.
-const canEdit = (requesterRole, targetRole) => {
-  if (targetRole === 'SUPER_ADMIN') return requesterRole === 'SUPER_ADMIN';
-  return getRank(requesterRole) >= getRank(targetRole);
+// Nobody can manage a SUPER_ADMIN account (they manage themselves via /me).
+// ADMIN and SUPER_ADMIN can manage ADMIN and USER accounts.
+const canManage = (requesterRole, targetRole) => {
+  if (targetRole === 'SUPER_ADMIN') return false;
+  return requesterRole === 'SUPER_ADMIN' || requesterRole === 'ADMIN';
 };
 
 // What's the highest role a requester can assign?
@@ -112,7 +109,7 @@ const updateUser = async (req, res) => {
     }
 
     // Edit check: cannot edit SUPER_ADMIN unless you are SUPER_ADMIN
-    if (!canEdit(req.user.role, existing.role)) {
+    if (!canManage(req.user.role, existing.role)) {
       return res.status(403).json({ success: false, error: 'Access denied: insufficient privileges' });
     }
 
@@ -167,7 +164,7 @@ const deleteUser = async (req, res) => {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
-    if (!canDelete(req.user.role, existing.role)) {
+    if (!canManage(req.user.role, existing.role)) {
       return res.status(403).json({ success: false, error: 'Access denied: insufficient privileges' });
     }
 
@@ -193,7 +190,7 @@ const toggleUser = async (req, res) => {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
-    if (!canDelete(req.user.role, existing.role)) {
+    if (!canManage(req.user.role, existing.role)) {
       return res.status(403).json({ success: false, error: 'Access denied: insufficient privileges' });
     }
 
