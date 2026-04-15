@@ -1,6 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
+const XLSX = require('xlsx');
 const { uploadPhoto } = require('../services/supabase.service');
-const { parseExcel, generateExcel } = require('../services/excel.service');
+const { generateExcel } = require('../services/excel.service');
 
 const prisma = new PrismaClient();
 
@@ -259,6 +260,43 @@ const toggleBhakto = async (req, res) => {
   }
 };
 
+// Helper: parse date of birth from multiple formats
+// Handles: JS Date (cellDates:true), Excel serial number, 'YYYY-MM-DD', 'DD/MM/YYYY'
+const parseDOB = (raw) => {
+  if (raw === null || raw === undefined || raw === '') return null;
+
+  // Already a JS Date object (xlsx cellDates:true)
+  if (raw instanceof Date) {
+    return isNaN(raw.getTime()) ? null : raw;
+  }
+
+  // Excel serial number → JS Date
+  // Excel epoch is Dec 30, 1899 (accounts for the 1900 leap-year bug)
+  if (typeof raw === 'number') {
+    const d = new Date(Math.round((raw - 25569) * 86400 * 1000));
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  const str = String(raw).trim();
+  if (!str) return null;
+
+  // 'YYYY-MM-DD' — our own export format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const d = new Date(`${str}T00:00:00.000Z`);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  // 'DD/MM/YYYY' — common user-entered format
+  const ddmmyyyy = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (ddmmyyyy) {
+    const [, day, month, year] = ddmmyyyy;
+    const d = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T00:00:00.000Z`);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  return null;
+};
+
 // POST /api/bhakto/import
 const importBhakto = async (req, res) => {
   try {
@@ -266,31 +304,123 @@ const importBhakto = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Excel file is required' });
     }
 
-    const rows = parseExcel(req.file.buffer);
-    let created = 0;
+    // Parse with cellDates:true so Excel date cells come back as JS Date objects
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+    const sheet    = workbook.Sheets[workbook.SheetNames[0]];
+    const rows     = XLSX.utils.sheet_to_json(sheet);
 
-    for (const row of rows) {
-      if (!row.fullName) continue;
-      await prisma.bhakto.create({
-        data: {
-          fullName:    String(row.fullName),
-          houseNo:     row.houseNo     ? String(row.houseNo)     : null,
-          society:     row.society     ? String(row.society)     : null,
-          mobileNo:    row.mobileNo    ? String(row.mobileNo)    : null,
-          occupation:  row.occupation  ? String(row.occupation)  : null,
-          referenceBy: row.referenceBy ? String(row.referenceBy) : null,
-          gender:      row.gender      ? String(row.gender).toUpperCase() : 'MALE',
-          remarks:     row.remarks     ? String(row.remarks)     : null,
-          isLeader:    row.isLeader    === true || row.isLeader  === 'true',
-          dateOfBirth: row.dateOfBirth ? new Date(row.dateOfBirth) : null,
-        },
-      });
-      created++;
+    const total  = rows.length;
+    let imported = 0;
+    let skipped  = 0;
+    const errors = [];
+
+    // Pre-load societies and categories once for fast in-memory lookup (avoids N+1 queries)
+    const [allSocieties, allCategories] = await Promise.all([
+      prisma.society.findMany({ select: { id: true, name: true } }),
+      prisma.category.findMany({ select: { id: true, name: true } }),
+    ]);
+
+    const societyMap  = new Map(allSocieties.map(s => [s.name.trim().toLowerCase(),  s.id]));
+    const categoryMap = new Map(allCategories.map(c => [c.name.trim().toLowerCase(), c.id]));
+
+    for (let i = 0; i < rows.length; i++) {
+      const row    = rows[i];
+      const rowNum = i + 2; // row 1 = header in Excel
+      const name   = row['Full Name'] ? String(row['Full Name']).trim() : null;
+
+      if (!name) {
+        errors.push({ row: rowNum, name: '-', reason: 'Full Name is required' });
+        skipped++;
+        continue;
+      }
+
+      // Society lookup — skip row if a society name is given but not found in DB
+      let societyId = null;
+      const societyName = row['Society'] ? String(row['Society']).trim() : null;
+      if (societyName) {
+        societyId = societyMap.get(societyName.toLowerCase()) ?? null;
+        if (!societyId) {
+          errors.push({ row: rowNum, name, reason: `Society '${societyName}' not found` });
+          skipped++;
+          continue;
+        }
+      }
+
+      // Category lookup — skip row if a category name is given but not found in DB
+      let categoryId = null;
+      const categoryName = row['Category'] ? String(row['Category']).trim() : null;
+      if (categoryName) {
+        categoryId = categoryMap.get(categoryName.toLowerCase()) ?? null;
+        if (!categoryId) {
+          errors.push({ row: rowNum, name, reason: `Category '${categoryName}' not found` });
+          skipped++;
+          continue;
+        }
+      }
+
+      // referenceBy — plain string field, store as-is (no FK); don't block row if absent
+      const referenceBy = row['Reference By'] ? String(row['Reference By']).trim() : null;
+
+      // DOB — multi-format parser
+      const dateOfBirth = parseDOB(row['DOB']);
+
+      // isActive — export writes 'Yes'/'No'; also accept 'Active'/'Inactive' for manual files
+      let isActive = true;
+      const isActiveRaw = row['Is Active'];
+      if (isActiveRaw !== undefined && isActiveRaw !== null) {
+        const val = String(isActiveRaw).trim().toLowerCase();
+        isActive = val === 'yes' || val === 'active';
+      }
+
+      // isLeader — export writes 'Yes'/'No'
+      let isLeader = false;
+      const isLeaderRaw = row['Is Leader'];
+      if (isLeaderRaw !== undefined && isLeaderRaw !== null) {
+        const val = String(isLeaderRaw).trim().toLowerCase();
+        isLeader = val === 'yes' || val === 'true';
+      }
+
+      // Gender — default MALE if missing or unrecognised
+      let gender = 'MALE';
+      const genderRaw = row['Gender'];
+      if (genderRaw) {
+        const g = String(genderRaw).trim().toUpperCase();
+        if (['MALE', 'FEMALE', 'OTHER'].includes(g)) gender = g;
+      }
+
+      try {
+        await prisma.bhakto.create({
+          data: {
+            fullName:    name,
+            houseNo:     row['House No']   ? String(row['House No']).trim()   : null,
+            mobileNo:    row['Mobile']     ? String(row['Mobile']).trim()     : null,
+            occupation:  row['Occupation'] ? String(row['Occupation']).trim() : null,
+            remarks:     row['Remarks']    ? String(row['Remarks']).trim()    : null,
+            societyId,
+            categoryId,
+            referenceBy,
+            dateOfBirth,
+            gender,
+            isLeader,
+            isActive,
+            createdBy: req.user.username,
+            updatedBy: req.user.username,
+          },
+        });
+        imported++;
+      } catch (rowErr) {
+        console.error(`[importBhakto] row ${rowNum} error:`, rowErr.message);
+        errors.push({ row: rowNum, name, reason: rowErr.message });
+        skipped++;
+      }
     }
 
-    return res.json({ success: true, data: `${created} bhakto imported successfully` });
+    return res.json({
+      success: true,
+      data: { total, imported, skipped, errors },
+    });
   } catch (err) {
-    console.error(err);
+    console.error('[importBhakto] fatal:', err);
     return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 };

@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/auth.middleware');
 const { roleMiddleware } = require("../middleware/role.middleware");
-const upload = require('../middleware/upload.middleware');
+const { upload, uploadExcel } = require('../middleware/upload.middleware');
 const {
   getAllBhakto, getBhaktoById, createBhakto,
   updateBhakto, deleteBhakto, toggleBhakto,
@@ -17,7 +17,7 @@ router.get('/',               getAllBhakto);                                    
 router.get('/:id',            getBhaktoById);                                      // JWT only
 
 // Import still admin-only
-router.post('/import',        roleMiddleware, upload.single('file'), importBhakto); // Admin only
+router.post('/import',        roleMiddleware, uploadExcel.single('file'), importBhakto); // Admin only
 
 // Create/Edit/Delete: JWT only — controller enforces ownership for non-admin
 router.post('/',              upload.single('photo'), createBhakto);
