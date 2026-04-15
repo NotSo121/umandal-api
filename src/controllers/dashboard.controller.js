@@ -77,9 +77,9 @@ const getStats = async (req, res) => {
       }),
     ]);
 
-    // ── Pocket count for non-admin ──────────────────────────────────────────
+    // ── Pocket count for anyone with a linked bhaktoId (SUPER_ADMIN always global) ──
     let pocketCount = null;
-    if (!['ADMIN','SUPER_ADMIN'].includes(req.user.role)) {
+    if (req.user.role !== 'SUPER_ADMIN') {
       const userRow = await prisma.user.findUnique({
         where:  { id: req.user.sub },
         select: { bhaktoId: true },

@@ -22,7 +22,9 @@ const getLeaderName = async (userId) => {
 };
 
 // GET /api/attendance/:eventId
-// ADMIN → all active bhaktos; USER → only their leader's bhaktos
+// SUPER_ADMIN → all bhaktos, no pocket marking
+// ADMIN → all bhaktos; pocket bhaktos flagged with isMyPocket=true if bhaktoId linked
+// USER → only their leader's bhaktos (scoped list, isMyPocket always false)
 const getAttendanceByEvent = async (req, res) => {
   try {
     const eventId = parseInt(req.params.eventId);
@@ -32,16 +34,28 @@ const getAttendanceByEvent = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Event not found' });
     }
 
-    // Build bhakto filter based on role
-    const isAdmin = ['ADMIN','SUPER_ADMIN'].includes(req.user.role);
+    const isAdmin      = ['ADMIN','SUPER_ADMIN'].includes(req.user.role);
+    const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
     let bhaktoWhere = { isActive: true };
+    let pocketIds   = new Set(); // bhakto IDs that belong to this ADMIN's pocket
 
     if (!isAdmin) {
+      // USER: scope to own pocket
       const leaderName = await getLeaderName(req.user.sub);
       if (!leaderName) {
         return res.json({ success: true, data: { event, attendance: [] } });
       }
       bhaktoWhere.referenceBy = leaderName;
+    } else if (!isSuperAdmin) {
+      // ADMIN (not SUPER_ADMIN): fetch all, but build pocket ID set for flagging
+      const leaderName = await getLeaderName(req.user.sub);
+      if (leaderName) {
+        const pocket = await prisma.bhakto.findMany({
+          where:  { referenceBy: leaderName },
+          select: { id: true },
+        });
+        pocketIds = new Set(pocket.map((b) => b.id));
+      }
     }
 
     const bhaktos = await prisma.bhakto.findMany({
@@ -56,12 +70,13 @@ const getAttendanceByEvent = async (req, res) => {
     attendances.forEach((a) => { attendanceMap[a.bhaktoId] = a; });
 
     const result = bhaktos.map((b) => ({
-      bhaktoId:  b.id,
-      fullName:  b.fullName,
-      mobileNo:  b.mobileNo,
-      photoUrl:  b.photoUrl,
-      isPresent: attendanceMap[b.id]?.isPresent || false,
-      remarks:   attendanceMap[b.id]?.remarks   || null,
+      bhaktoId:   b.id,
+      fullName:   b.fullName,
+      mobileNo:   b.mobileNo,
+      photoUrl:   b.photoUrl,
+      isPresent:  attendanceMap[b.id]?.isPresent || false,
+      remarks:    attendanceMap[b.id]?.remarks   || null,
+      isMyPocket: pocketIds.has(b.id),
     }));
 
     return res.json({ success: true, data: { event, attendance: result } });

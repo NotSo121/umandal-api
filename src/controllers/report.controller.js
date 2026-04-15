@@ -31,23 +31,29 @@ const getBhaktoIdsForLeader = async (leaderName) => {
 };
 
 // GET /api/reports/events
-// Admin: all events (optionally filtered by ?referenceBy=name)
-// User: events scoped to their team only
+// SUPER_ADMIN: always global (optional ?referenceBy= filter)
+// ADMIN + ?myTeam=true: scoped to own pocket (My Team Report)
+// ADMIN (no myTeam flag): global with optional ?referenceBy= filter (Event Report)
+// USER: always scoped to own pocket
 const getEventReport = async (req, res) => {
   try {
     const { referenceBy } = req.query;
-    const isAdmin = ['ADMIN','SUPER_ADMIN'].includes(req.user.role);
+    const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
+    const isAdmin      = ['ADMIN','SUPER_ADMIN'].includes(req.user.role);
+    const myTeam       = req.query.myTeam === 'true';
 
     // Determine the leader filter
     let bhaktoIds = null; // null = no filter (all)
-    if (!isAdmin) {
+    if (isSuperAdmin) {
+      if (referenceBy) bhaktoIds = await getBhaktoIdsForLeader(referenceBy);
+    } else if (!isAdmin || myTeam) {
       const leaderName = await getLeaderName(req.user.sub);
       if (!leaderName) {
         return res.json({ success: true, data: [] });
       }
       bhaktoIds = await getBhaktoIdsForLeader(leaderName);
-    } else if (referenceBy) {
-      bhaktoIds = await getBhaktoIdsForLeader(referenceBy);
+    } else {
+      if (referenceBy) bhaktoIds = await getBhaktoIdsForLeader(referenceBy);
     }
 
     const events = await prisma.event.findMany({
@@ -91,12 +97,14 @@ const getEventReport = async (req, res) => {
 };
 
 // GET /api/reports/events/:eventId
-// Returns attendance records for one event, scoped by role/filter
+// Returns attendance records for one event, scoped by role/myTeam flag
 const getEventReportDetail = async (req, res) => {
   try {
     const eventId = parseInt(req.params.eventId);
     const { referenceBy } = req.query;
-    const isAdmin = ['ADMIN','SUPER_ADMIN'].includes(req.user.role);
+    const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
+    const isAdmin      = ['ADMIN','SUPER_ADMIN'].includes(req.user.role);
+    const myTeam       = req.query.myTeam === 'true';
 
     const event = await prisma.event.findUnique({ where: { id: eventId } });
     if (!event) {
@@ -104,14 +112,16 @@ const getEventReportDetail = async (req, res) => {
     }
 
     let bhaktoIds = null;
-    if (!isAdmin) {
+    if (isSuperAdmin) {
+      if (referenceBy) bhaktoIds = await getBhaktoIdsForLeader(referenceBy);
+    } else if (!isAdmin || myTeam) {
       const leaderName = await getLeaderName(req.user.sub);
       if (!leaderName) {
         return res.json({ success: true, data: { event, attendance: [] } });
       }
       bhaktoIds = await getBhaktoIdsForLeader(leaderName);
-    } else if (referenceBy) {
-      bhaktoIds = await getBhaktoIdsForLeader(referenceBy);
+    } else {
+      if (referenceBy) bhaktoIds = await getBhaktoIdsForLeader(referenceBy);
     }
 
     const attendanceWhere = { eventId };
@@ -165,14 +175,23 @@ const getLeaderSummary = async (req, res) => {
 };
 
 // GET /api/reports/leaders/detail?name=<leaderName>  (admin only)
-// Event-wise stats for one leader's team
+// Event-wise stats for one leader's team.
+// Non-SUPER_ADMIN with bhaktoId: auto-scopes to own leader (ignores ?name=).
 const getLeaderDetail = async (req, res) => {
   try {
-    const { name: leaderName } = req.query;
-    if (!leaderName) {
+    let resolvedLeaderName = req.query.name;
+
+    // Non-SUPER_ADMIN: if they have a linked bhaktoId, always scope to their own leader
+    if (req.user.role !== 'SUPER_ADMIN') {
+      const ownLeader = await getLeaderName(req.user.sub);
+      if (ownLeader) resolvedLeaderName = ownLeader;
+    }
+
+    if (!resolvedLeaderName) {
       return res.status(400).json({ success: false, error: 'Leader name is required' });
     }
 
+    const leaderName = resolvedLeaderName;
     const bhaktoIds = await getBhaktoIdsForLeader(leaderName);
 
     if (bhaktoIds.length === 0) {
