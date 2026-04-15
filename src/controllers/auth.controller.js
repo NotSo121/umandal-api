@@ -4,6 +4,20 @@ const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
 
+async function logLogin(username, role, status, req) {
+  try {
+    await prisma.loginLog.create({
+      data: {
+        username,
+        role:       role ?? null,
+        status,
+        ipAddress:  req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null,
+        deviceInfo: req.body?.deviceInfo ?? null,
+      },
+    });
+  } catch (_) { /* never block login */ }
+}
+
 // POST /api/auth/login
 const login = async (req, res) => {
   try {
@@ -20,16 +34,19 @@ const login = async (req, res) => {
     });
 
     if (!user) {
+      await logLogin(username, null, 'FAILED', req);
       return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
     if (!user.isActive) {
+      await logLogin(username, null, 'FAILED', req);
       return res.status(401).json({ success: false, error: 'Account is deactivated' });
     }
 
     // Verify password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
+      await logLogin(username, null, 'FAILED', req);
       return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
@@ -44,6 +61,8 @@ const login = async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
+
+    await logLogin(user.username, user.role, 'SUCCESS', req);
 
     return res.json({
       success: true,

@@ -103,3 +103,13 @@ model Attendance {
 
   @@unique([bhaktoId, eventId])
 }
+
+model LoginLog {
+  id         Int      @id @default(autoincrement())
+  username   String
+  role       String?
+  status     String   // "SUCCESS" or "FAILED"
+  ipAddress  String?
+  deviceInfo String?
+  createdAt  DateTime @default(now())
+}
