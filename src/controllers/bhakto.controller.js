@@ -180,6 +180,8 @@ const updateBhakto = async (req, res) => {
     let photoUrl = existing.photoUrl;
     if (req.file) {
       photoUrl = await uploadPhoto(req.file.buffer, req.file.originalname, req.file.mimetype);
+    } else if (req.body.removePhoto === 'true') {
+      photoUrl = null;
     }
 
     const bhakto = await prisma.bhakto.update({
