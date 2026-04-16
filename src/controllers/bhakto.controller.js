@@ -440,8 +440,8 @@ const importBhakto = async (req, res) => {
           },
         });
         // Update set so duplicate rows within the same file are also caught
-        if (mobileNo) {
-          byNameMobile.add(`${name.toLowerCase()}|${mobileNo.trim()}`);
+        if (mobileRaw) {
+          byNameMobile.add(`${name.toLowerCase()}|${mobileRaw.trim()}`);
         }
         imported++;
       } catch (rowErr) {
