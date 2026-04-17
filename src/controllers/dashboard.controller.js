@@ -1,6 +1,27 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+const getLeaderName = async (userId) => {
+  const user = await prisma.user.findUnique({
+    where: { id: parseInt(userId) },
+    select: { bhaktoId: true },
+  });
+  if (!user?.bhaktoId) return null;
+  const bhakto = await prisma.bhakto.findUnique({
+    where: { id: user.bhaktoId },
+    select: { fullName: true },
+  });
+  return bhakto?.fullName ?? null;
+};
+
+const getBhaktoIdsForLeader = async (leaderName) => {
+  const bhaktos = await prisma.bhakto.findMany({
+    where: { referenceBy: leaderName },
+    select: { id: true },
+  });
+  return bhaktos.map((b) => b.id);
+};
+
 // GET /api/dashboard/stats
 const getStats = async (req, res) => {
   try {
@@ -179,4 +200,128 @@ const getStats = async (req, res) => {
   }
 };
 
-module.exports = { getStats };
+// GET /api/dashboard/charts?tag=<seriesTag>
+// tag is optional — auto-picks the tag with most events in last 90 days if omitted.
+// trendLine: last 6 events for selectedTag sorted ASC, rate = present/total * 100.
+// pocketBars: avg rate per leader across last 6 events; SUPER_ADMIN + ADMIN only.
+// Scoping: SUPER_ADMIN = global; ADMIN+bhaktoId = pocket scoped; USER = pocket scoped.
+const getCharts = async (req, res) => {
+  try {
+    const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
+    const isAdmin      = ['ADMIN', 'SUPER_ADMIN'].includes(req.user.role);
+
+    // ── 1. Available tags from all active events ──
+    const tagRows = await prisma.event.findMany({
+      where:    { seriesTag: { not: null }, isActive: true },
+      select:   { seriesTag: true },
+      distinct: ['seriesTag'],
+      orderBy:  { seriesTag: 'asc' },
+    });
+    const availableTags = tagRows.map((r) => r.seriesTag);
+
+    if (availableTags.length === 0) {
+      return res.json({ success: true, data: { selectedTag: null, availableTags: [], trendLine: [], pocketBars: [] } });
+    }
+
+    // ── 2. Determine selectedTag ──
+    let selectedTag = req.query.tag || null;
+    if (!selectedTag) {
+      const ninety = new Date();
+      ninety.setDate(ninety.getDate() - 90);
+      const tagCounts = await prisma.event.groupBy({
+        by:      ['seriesTag'],
+        where:   { seriesTag: { not: null }, isActive: true, eventDate: { gte: ninety } },
+        _count:  { id: true },
+        orderBy: { _count: { id: 'desc' } },
+        take:    1,
+      });
+      selectedTag = tagCounts.length > 0 ? tagCounts[0].seriesTag : availableTags[0];
+    }
+
+    // ── 3. Scoping for trendLine ──
+    let bhaktoIds = null; // null = no filter (global)
+    if (!isSuperAdmin) {
+      const leaderName = await getLeaderName(req.user.sub);
+      if (leaderName) {
+        bhaktoIds = await getBhaktoIdsForLeader(leaderName);
+      } else if (!isAdmin) {
+        // USER with no linked bhakto — no pocket data
+        bhaktoIds = [];
+      }
+      // ADMIN with no bhaktoId: bhaktoIds stays null (global)
+    }
+
+    // ── 4. Last 6 events for selectedTag (desc → take 6 → reverse to ASC) ──
+    const last6Events = await prisma.event.findMany({
+      where:   { seriesTag: selectedTag, isActive: true },
+      orderBy: { eventDate: 'desc' },
+      take:    6,
+    });
+    last6Events.reverse();
+
+    // ── 5. TrendLine ──
+    const trendLine = await Promise.all(
+      last6Events.map(async (event) => {
+        const where = { eventId: event.id };
+        if (bhaktoIds !== null) where.bhaktoId = { in: bhaktoIds };
+
+        const [total, present] = await Promise.all([
+          prisma.attendance.count({ where }),
+          prisma.attendance.count({ where: { ...where, isPresent: true } }),
+        ]);
+        return {
+          eventId:   event.id,
+          eventName: event.name,
+          eventDate: event.eventDate.toISOString().split('T')[0],
+          rate:      total > 0 ? Math.round((present / total) * 100) : 0,
+        };
+      })
+    );
+
+    // ── 6. PocketBars (SUPER_ADMIN and ADMIN only) ──
+    let pocketBars = [];
+    if (isAdmin && last6Events.length > 0) {
+      const leaders = await prisma.bhakto.findMany({
+        where:   { isLeader: true },
+        select:  { id: true, fullName: true },
+        orderBy: { fullName: 'asc' },
+      });
+
+      const bars = await Promise.all(
+        leaders.map(async (leader) => {
+          const pocketIds = await getBhaktoIdsForLeader(leader.fullName);
+          if (pocketIds.length === 0) return null;
+
+          let rateSum = 0;
+          let counted = 0;
+          for (const event of last6Events) {
+            const w = { eventId: event.id, bhaktoId: { in: pocketIds } };
+            const [total, present] = await Promise.all([
+              prisma.attendance.count({ where: w }),
+              prisma.attendance.count({ where: { ...w, isPresent: true } }),
+            ]);
+            if (total > 0) {
+              rateSum += (present / total) * 100;
+              counted++;
+            }
+          }
+
+          return {
+            leaderName: leader.fullName,
+            bhaktoId:   leader.id,
+            rate:       counted > 0 ? Math.round(rateSum / counted) : 0,
+          };
+        })
+      );
+
+      pocketBars = bars.filter(Boolean).sort((a, b) => b.rate - a.rate);
+    }
+
+    return res.json({ success: true, data: { selectedTag, availableTags, trendLine, pocketBars } });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+};
+
+module.exports = { getStats, getCharts };
