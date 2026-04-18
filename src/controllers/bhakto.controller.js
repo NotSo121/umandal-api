@@ -273,7 +273,8 @@ const toggleBhakto = async (req, res) => {
 };
 
 // Helper: parse date of birth from multiple formats
-// Handles: JS Date (cellDates:true), Excel serial number, 'YYYY-MM-DD', 'DD/MM/YYYY'
+// Handles: JS Date (cellDates:true), Excel serial number,
+//          'YYYY-MM-DD', 'DD/MM/YYYY', 'DD-MM-YYYY'
 const parseDOB = (raw) => {
   if (raw === null || raw === undefined || raw === '') return null;
 
@@ -298,8 +299,8 @@ const parseDOB = (raw) => {
     return isNaN(d.getTime()) ? null : d;
   }
 
-  // 'DD/MM/YYYY' — common user-entered format
-  const ddmmyyyy = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  // 'DD/MM/YYYY' or 'DD-MM-YYYY' — common user-entered formats
+  const ddmmyyyy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
   if (ddmmyyyy) {
     const [, day, month, year] = ddmmyyyy;
     const d = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T00:00:00.000Z`);
