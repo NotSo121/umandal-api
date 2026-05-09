@@ -93,6 +93,7 @@ model Event {
   description     String?
   isActive        Boolean        @default(true)
   isOpen          Boolean        @default(true)
+  isSpecial       Boolean        @default(false)
   seriesTag       String?
   eventCategoryId Int?
   eventCategory   EventCategory? @relation(fields: [eventCategoryId], references: [id])

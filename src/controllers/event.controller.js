@@ -37,7 +37,7 @@ const getEventById = async (req, res) => {
 // POST /api/events
 const createEvent = async (req, res) => {
   try {
-    const { name, eventDate, location, description, eventCategoryId } = req.body;
+    const { name, eventDate, location, description, eventCategoryId, isSpecial } = req.body;
 
     if (!name || !eventDate) {
       return res.status(400).json({ success: false, error: 'Name and event date are required' });
@@ -50,6 +50,7 @@ const createEvent = async (req, res) => {
         location,
         description,
         eventCategoryId: eventCategoryId ? parseInt(eventCategoryId) : null,
+        isSpecial: isSpecial === true || isSpecial === 'true',
       },
       include: categoryInclude,
     });
@@ -65,7 +66,7 @@ const createEvent = async (req, res) => {
 const updateEvent = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { name, eventDate, location, description, isActive, eventCategoryId } = req.body;
+    const { name, eventDate, location, description, isActive, eventCategoryId, isSpecial } = req.body;
 
     const existing = await prisma.event.findUnique({ where: { id } });
     if (!existing) {
@@ -80,6 +81,7 @@ const updateEvent = async (req, res) => {
         location:        location    ?? existing.location,
         description:     description ?? existing.description,
         isActive:        isActive    !== undefined ? Boolean(isActive) : existing.isActive,
+        isSpecial:       isSpecial   !== undefined ? (isSpecial === true || isSpecial === 'true') : existing.isSpecial,
         eventCategoryId: eventCategoryId !== undefined
                            ? (eventCategoryId ? parseInt(eventCategoryId) : null)
                            : existing.eventCategoryId,

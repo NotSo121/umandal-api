@@ -69,12 +69,36 @@ const getNotifications = async (req, res) => {
       .filter((b) => b.daysUntil <= 14)
       .sort((a, b) => a.daysUntil - b.daysUntil);
 
+    // ── Anniversaries of special events (next 14 days, admin only) ──────────
+    let anniversaries = [];
+    if (['ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
+      const allSpecial = await prisma.event.findMany({
+        where:  { isSpecial: true, isActive: true, eventDate: { lt: today } },
+        select: { id: true, name: true, eventDate: true, location: true },
+      });
+
+      anniversaries = allSpecial
+        .map((e) => {
+          const past        = new Date(e.eventDate);
+          let   annivThisYr = new Date(today.getFullYear(), past.getMonth(), past.getDate());
+          if (annivThisYr < today) {
+            annivThisYr = new Date(today.getFullYear() + 1, past.getMonth(), past.getDate());
+          }
+          const daysUntil   = Math.round((annivThisYr - today) / (1000 * 60 * 60 * 24));
+          const yearsAgo    = annivThisYr.getFullYear() - past.getFullYear();
+          return { ...e, daysUntil, yearsAgo, anniversaryDate: annivThisYr };
+        })
+        .filter((e) => e.daysUntil <= 14)
+        .sort((a, b) => a.daysUntil - b.daysUntil);
+    }
+
     return res.json({
       success: true,
       data: {
-        events:    eventsWithDays,
-        birthdays: upcomingBirthdays,
-        total:     eventsWithDays.length + upcomingBirthdays.length,
+        events:        eventsWithDays,
+        birthdays:     upcomingBirthdays,
+        anniversaries,
+        total:         eventsWithDays.length + upcomingBirthdays.length + anniversaries.length,
       },
     });
   } catch (err) {
