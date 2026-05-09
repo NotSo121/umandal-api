@@ -15,6 +15,7 @@ const notificationRoutes  = require('./routes/notification.routes');
 const reportRoutes        = require('./routes/report.routes');
 const logsRoutes          = require('./routes/logs.routes');
 const backupRoutes        = require('./routes/backup.routes');
+const { startEventScheduler } = require('./cron/event_scheduler');
 
 const app = express();
 
@@ -46,5 +47,7 @@ app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ success: false, error: err.message || 'Internal Server Error' });
 });
+
+startEventScheduler();
 
 module.exports = app;
