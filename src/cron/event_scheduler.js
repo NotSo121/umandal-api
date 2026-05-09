@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const { PrismaClient } = require('@prisma/client');
+const { sendPush } = require('../utils/fcm');
 
 const prisma = new PrismaClient();
 
@@ -51,6 +52,55 @@ const startEventScheduler = () => {
   }, { timezone: 'Asia/Kolkata' });
 
   console.log('[scheduler] Event scheduler started — Friday Sabha auto-create every Wednesday 9 AM IST');
+
+  // Every day at 11:00 PM IST — remind leaders who haven't submitted attendance
+  cron.schedule('0 23 * * *', async () => {
+    try {
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      const todayEnd   = new Date(); todayEnd.setHours(23, 59, 59, 999);
+
+      const todayEvents = await prisma.event.findMany({
+        where: { eventDate: { gte: todayStart, lte: todayEnd }, isActive: true, isOpen: true },
+        select: { id: true, name: true },
+      });
+      if (todayEvents.length === 0) return;
+
+      const users = await prisma.user.findMany({
+        where: { fcmToken: { not: null }, bhaktoId: { not: null }, isActive: true },
+        select: { id: true, fcmToken: true, bhaktoId: true, bhakto: { select: { fullName: true } } },
+      });
+      if (users.length === 0) return;
+
+      for (const event of todayEvents) {
+        for (const user of users) {
+          if (!user.bhakto?.fullName) continue;
+
+          const pocket = await prisma.bhakto.findMany({
+            where:  { referenceBy: user.bhakto.fullName, isActive: true },
+            select: { id: true },
+          });
+          if (pocket.length === 0) continue;
+
+          const submitted = await prisma.attendance.count({
+            where: { eventId: event.id, bhaktoId: { in: pocket.map((b) => b.id) } },
+          });
+
+          if (submitted === 0) {
+            await sendPush(
+              user.fcmToken,
+              'Attendance Reminder',
+              `Please fill attendance for "${event.name}"`,
+            );
+          }
+        }
+      }
+      console.log(`[scheduler] Attendance reminder sent for ${todayEvents.length} event(s)`);
+    } catch (err) {
+      console.error('[scheduler] Attendance reminder error:', err.message);
+    }
+  }, { timezone: 'Asia/Kolkata' });
+
+  console.log('[scheduler] Attendance reminder cron started — every day 11 PM IST');
 };
 
 module.exports = { startEventScheduler };

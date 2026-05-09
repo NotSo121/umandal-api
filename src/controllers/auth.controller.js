@@ -178,4 +178,17 @@ const updateMe = async (req, res) => {
   }
 };
 
-module.exports = { login, getMe, updateMe };
+// PUT /api/auth/fcm-token
+const saveFcmToken = async (req, res) => {
+  try {
+    const { fcmToken } = req.body;
+    if (!fcmToken) return res.status(400).json({ success: false, error: 'fcmToken required' });
+    await prisma.user.update({ where: { id: req.user.sub }, data: { fcmToken } });
+    return res.json({ success: true, data: 'FCM token saved' });
+  } catch (err) {
+    console.error('SaveFcmToken error:', err);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+};
+
+module.exports = { login, getMe, updateMe, saveFcmToken };

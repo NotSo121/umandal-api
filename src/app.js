@@ -16,6 +16,7 @@ const reportRoutes        = require('./routes/report.routes');
 const logsRoutes          = require('./routes/logs.routes');
 const backupRoutes        = require('./routes/backup.routes');
 const { startEventScheduler } = require('./cron/event_scheduler');
+const { initFcm } = require('./utils/fcm');
 
 const app = express();
 
@@ -48,6 +49,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, error: err.message || 'Internal Server Error' });
 });
 
+initFcm();
 startEventScheduler();
 
 module.exports = app;
