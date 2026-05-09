@@ -79,17 +79,25 @@ model Bhakto {
   user        User?
 }
 
+model EventCategory {
+  id     Int     @id @default(autoincrement())
+  name   String  @unique
+  events Event[]
+}
+
 model Event {
-  id          Int          @id @default(autoincrement())
-  name        String
-  eventDate   DateTime
-  location    String?
-  description String?
-  isActive    Boolean      @default(true)
-  isOpen      Boolean      @default(true)
-  seriesTag   String?
-  createdAt   DateTime     @default(now())
-  attendances Attendance[]
+  id              Int            @id @default(autoincrement())
+  name            String
+  eventDate       DateTime
+  location        String?
+  description     String?
+  isActive        Boolean        @default(true)
+  isOpen          Boolean        @default(true)
+  seriesTag       String?
+  eventCategoryId Int?
+  eventCategory   EventCategory? @relation(fields: [eventCategoryId], references: [id])
+  createdAt       DateTime       @default(now())
+  attendances     Attendance[]
 }
 
 model Attendance {
@@ -103,6 +111,19 @@ model Attendance {
   createdAt DateTime @default(now())
 
   @@unique([bhaktoId, eventId])
+}
+
+model BackupHistory {
+  id           Int      @id @default(autoincrement())
+  fileName     String
+  jsonPath     String
+  excelPath    String
+  jsonSize     Int
+  excelSize    Int
+  type         String   // "MANUAL" or "AUTO"
+  recordCounts Json
+  createdBy    String?
+  createdAt    DateTime @default(now())
 }
 
 model LoginLog {

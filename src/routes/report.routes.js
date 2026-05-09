@@ -19,6 +19,6 @@ router.get('/leaders/detail',      roleMiddleware, getLeaderDetail);
 
 // All authenticated users: series report
 router.get('/series',              getSeriesTags);
-router.get('/series/:tag',         getSeriesReport);
+router.get('/series/:categoryId',  getSeriesReport);
 
 module.exports = router;

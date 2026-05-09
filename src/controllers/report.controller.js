@@ -235,32 +235,29 @@ const getLeaderDetail = async (req, res) => {
 };
 
 // GET /api/reports/series
-// Returns distinct seriesTag values (non-null) from events — for dropdown population
+// Returns all EventCategory rows — for series report cards
 const getSeriesTags = async (req, res) => {
   try {
-    const rows = await prisma.event.findMany({
-      where: { seriesTag: { not: null }, isActive: true },
-      select: { seriesTag: true },
-      distinct: ['seriesTag'],
-      orderBy: { seriesTag: 'asc' },
+    const categories = await prisma.eventCategory.findMany({
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true },
     });
-    const tags = rows.map((r) => r.seriesTag);
-    return res.json({ success: true, data: tags });
+    return res.json({ success: true, data: categories });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 };
 
-// GET /api/reports/series/:tag
-// Returns all events with that seriesTag, each with attendance stats.
+// GET /api/reports/series/:categoryId
+// Returns all events with that eventCategoryId, each with attendance stats.
 // Same scoping rules as getEventReport:
 //   SUPER_ADMIN: global
 //   ADMIN + ?myTeam=true: pocket scoped
 //   USER: pocket scoped
 const getSeriesReport = async (req, res) => {
   try {
-    const tag = req.params.tag;
+    const categoryId = parseInt(req.params.categoryId);
     const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
     const isAdmin      = ['ADMIN', 'SUPER_ADMIN'].includes(req.user.role);
     const myTeam       = req.query.myTeam === 'true';
@@ -275,7 +272,7 @@ const getSeriesReport = async (req, res) => {
     }
 
     const events = await prisma.event.findMany({
-      where: { seriesTag: tag, isActive: true },
+      where: { eventCategoryId: categoryId, isActive: true },
       orderBy: { eventDate: 'asc' },
     });
 

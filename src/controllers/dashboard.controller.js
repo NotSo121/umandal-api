@@ -200,9 +200,9 @@ const getStats = async (req, res) => {
   }
 };
 
-// GET /api/dashboard/charts?tag=<seriesTag>
-// tag is optional — auto-picks the tag with most events in last 90 days if omitted.
-// trendLine: last 6 events for selectedTag sorted ASC, rate = present/total * 100.
+// GET /api/dashboard/charts?categoryId=<id>
+// categoryId is optional — auto-picks the category with most events in last 90 days if omitted.
+// trendLine: last 6 events for selectedCategory sorted ASC, rate = present/total * 100.
 // pocketBars: avg rate per leader across last 6 events; SUPER_ADMIN + ADMIN only.
 // Scoping: SUPER_ADMIN = global; ADMIN+bhaktoId = pocket scoped; USER = pocket scoped.
 const getCharts = async (req, res) => {
@@ -210,32 +210,33 @@ const getCharts = async (req, res) => {
     const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
     const isAdmin      = ['ADMIN', 'SUPER_ADMIN'].includes(req.user.role);
 
-    // ── 1. Available tags from all active events ──
-    const tagRows = await prisma.event.findMany({
-      where:    { seriesTag: { not: null }, isActive: true },
-      select:   { seriesTag: true },
-      distinct: ['seriesTag'],
-      orderBy:  { seriesTag: 'asc' },
+    // ── 1. Available categories ──
+    const availableCategories = await prisma.eventCategory.findMany({
+      orderBy: { name: 'asc' },
+      select:  { id: true, name: true },
     });
-    const availableTags = tagRows.map((r) => r.seriesTag);
 
-    if (availableTags.length === 0) {
-      return res.json({ success: true, data: { selectedTag: null, availableTags: [], trendLine: [], pocketBars: [] } });
+    if (availableCategories.length === 0) {
+      return res.json({ success: true, data: { selectedCategory: null, availableCategories: [], trendLine: [], pocketBars: [] } });
     }
 
-    // ── 2. Determine selectedTag ──
-    let selectedTag = req.query.tag || null;
-    if (!selectedTag) {
+    // ── 2. Determine selectedCategory ──
+    let selectedCategory = null;
+    const qCategoryId = req.query.categoryId ? parseInt(req.query.categoryId) : null;
+    if (qCategoryId) {
+      selectedCategory = availableCategories.find((c) => c.id === qCategoryId) ?? availableCategories[0];
+    } else {
       const ninety = new Date();
       ninety.setDate(ninety.getDate() - 90);
-      const tagCounts = await prisma.event.groupBy({
-        by:      ['seriesTag'],
-        where:   { seriesTag: { not: null }, isActive: true, eventDate: { gte: ninety } },
+      const catCounts = await prisma.event.groupBy({
+        by:      ['eventCategoryId'],
+        where:   { eventCategoryId: { not: null }, isActive: true, eventDate: { gte: ninety } },
         _count:  { id: true },
         orderBy: { _count: { id: 'desc' } },
         take:    1,
       });
-      selectedTag = tagCounts.length > 0 ? tagCounts[0].seriesTag : availableTags[0];
+      const autoId = catCounts.length > 0 ? catCounts[0].eventCategoryId : availableCategories[0].id;
+      selectedCategory = availableCategories.find((c) => c.id === autoId) ?? availableCategories[0];
     }
 
     // ── 3. Scoping for trendLine ──
@@ -251,9 +252,9 @@ const getCharts = async (req, res) => {
       // ADMIN with no bhaktoId: bhaktoIds stays null (global)
     }
 
-    // ── 4. Last 6 events for selectedTag (desc → take 6 → reverse to ASC) ──
+    // ── 4. Last 6 events for selectedCategory (desc → take 6 → reverse to ASC) ──
     const last6Events = await prisma.event.findMany({
-      where:   { seriesTag: selectedTag, isActive: true },
+      where:   { eventCategoryId: selectedCategory.id, isActive: true },
       orderBy: { eventDate: 'desc' },
       take:    6,
     });
@@ -317,7 +318,7 @@ const getCharts = async (req, res) => {
       pocketBars = bars.filter(Boolean).sort((a, b) => b.rate - a.rate);
     }
 
-    return res.json({ success: true, data: { selectedTag, availableTags, trendLine, pocketBars } });
+    return res.json({ success: true, data: { selectedCategory, availableCategories, trendLine, pocketBars } });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, error: 'Internal server error' });

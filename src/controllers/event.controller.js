@@ -1,11 +1,14 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+const categoryInclude = { eventCategory: { select: { id: true, name: true } } };
+
 // GET /api/events
 const getAllEvents = async (req, res) => {
   try {
     const events = await prisma.event.findMany({
       orderBy: { eventDate: 'desc' },
+      include: categoryInclude,
     });
     return res.json({ success: true, data: events });
   } catch (err) {
@@ -18,7 +21,7 @@ const getAllEvents = async (req, res) => {
 const getEventById = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const event = await prisma.event.findUnique({ where: { id } });
+    const event = await prisma.event.findUnique({ where: { id }, include: categoryInclude });
 
     if (!event) {
       return res.status(404).json({ success: false, error: 'Event not found' });
@@ -34,7 +37,7 @@ const getEventById = async (req, res) => {
 // POST /api/events
 const createEvent = async (req, res) => {
   try {
-    const { name, eventDate, location, description, seriesTag } = req.body;
+    const { name, eventDate, location, description, eventCategoryId } = req.body;
 
     if (!name || !eventDate) {
       return res.status(400).json({ success: false, error: 'Name and event date are required' });
@@ -46,8 +49,9 @@ const createEvent = async (req, res) => {
         eventDate: new Date(eventDate),
         location,
         description,
-        seriesTag: seriesTag || null,
+        eventCategoryId: eventCategoryId ? parseInt(eventCategoryId) : null,
       },
+      include: categoryInclude,
     });
 
     return res.status(201).json({ success: true, data: event });
@@ -61,7 +65,7 @@ const createEvent = async (req, res) => {
 const updateEvent = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { name, eventDate, location, description, isActive, seriesTag } = req.body;
+    const { name, eventDate, location, description, isActive, eventCategoryId } = req.body;
 
     const existing = await prisma.event.findUnique({ where: { id } });
     if (!existing) {
@@ -71,13 +75,16 @@ const updateEvent = async (req, res) => {
     const event = await prisma.event.update({
       where: { id },
       data: {
-        name:        name        || existing.name,
-        eventDate:   eventDate   ? new Date(eventDate) : existing.eventDate,
-        location:    location    ?? existing.location,
-        description: description ?? existing.description,
-        isActive:    isActive    !== undefined ? Boolean(isActive) : existing.isActive,
-        seriesTag:   seriesTag   !== undefined ? (seriesTag || null) : existing.seriesTag,
+        name:            name        || existing.name,
+        eventDate:       eventDate   ? new Date(eventDate) : existing.eventDate,
+        location:        location    ?? existing.location,
+        description:     description ?? existing.description,
+        isActive:        isActive    !== undefined ? Boolean(isActive) : existing.isActive,
+        eventCategoryId: eventCategoryId !== undefined
+                           ? (eventCategoryId ? parseInt(eventCategoryId) : null)
+                           : existing.eventCategoryId,
       },
+      include: categoryInclude,
     });
 
     return res.json({ success: true, data: event });
