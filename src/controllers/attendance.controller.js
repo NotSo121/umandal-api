@@ -148,7 +148,47 @@ const saveAttendance = async (req, res) => {
 
     await prisma.$transaction(upserts);
 
-    return res.json({ success: true, data: `Attendance saved for ${attendance.length} bhakto` });
+    res.json({ success: true, data: `Attendance saved for ${attendance.length} bhakto` });
+
+    // Fire-and-forget: auto-assign "Irregular" category for 4-streak absences
+    setImmediate(async () => {
+      try {
+        if (!event.eventCategoryId) return;
+
+        const irregularCategory = await prisma.category.findFirst({
+          where:  { name: 'Irregular' },
+          select: { id: true },
+        });
+        if (!irregularCategory) return;
+
+        const absentIds = attendance
+          .filter((a) => !a.isPresent)
+          .map((a) => parseInt(a.bhaktoId));
+        if (absentIds.length === 0) return;
+
+        await Promise.all(
+          absentIds.map(async (bhaktoId) => {
+            const last4 = await prisma.attendance.findMany({
+              where:   { bhaktoId, event: { eventCategoryId: event.eventCategoryId } },
+              orderBy: { event: { eventDate: 'desc' } },
+              take:    4,
+              select:  { isPresent: true },
+            });
+
+            if (last4.length === 4 && last4.every((a) => !a.isPresent)) {
+              await prisma.bhakto.update({
+                where: { id: bhaktoId },
+                data:  { categoryId: irregularCategory.id },
+              });
+            }
+          })
+        );
+      } catch (err) {
+        console.error('[irregular-check] error:', err.message);
+      }
+    });
+
+    return;
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, error: 'Internal server error' });

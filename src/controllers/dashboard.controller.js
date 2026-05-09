@@ -35,7 +35,6 @@ const getStats = async (req, res) => {
       upcomingEvents,
       recentEvents,
       societyStats,
-      categoryStats,
     ] = await Promise.all([
       // Total bhakto
       prisma.bhakto.count(),
@@ -86,20 +85,12 @@ const getStats = async (req, res) => {
         },
         orderBy: { name: 'asc' },
       }),
-
-      // Bhakto count per category
-      prisma.category.findMany({
-        select: {
-          id: true,
-          name: true,
-          _count: { select: { bhaktos: true } },
-        },
-        orderBy: { name: 'asc' },
-      }),
     ]);
 
-    // ── Pocket count for anyone with a linked bhaktoId (SUPER_ADMIN always global) ──
-    let pocketCount = null;
+    // ── Pocket + category scoping (shared leader lookup) ──────────────────────
+    let pocketCount       = null;
+    let bhaktoCountWhere  = {};
+
     if (req.user.role !== 'SUPER_ADMIN') {
       const userRow = await prisma.user.findUnique({
         where:  { id: req.user.sub },
@@ -111,12 +102,27 @@ const getStats = async (req, res) => {
           select: { fullName: true },
         });
         if (leaderBhakto?.fullName) {
+          // Pocket count for everyone except SUPER_ADMIN
           pocketCount = await prisma.bhakto.count({
             where: { referenceBy: leaderBhakto.fullName },
           });
+          // USER role: scope category stats to their pocket only
+          if (!['ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
+            bhaktoCountWhere = { referenceBy: leaderBhakto.fullName };
+          }
         }
       }
     }
+
+    // ── Category stats (scoped for USER, global for ADMIN/SUPER_ADMIN) ────────
+    const categoryStats = await prisma.category.findMany({
+      select: {
+        id:     true,
+        name:   true,
+        _count: { select: { bhaktos: { where: bhaktoCountWhere } } },
+      },
+      orderBy: { name: 'asc' },
+    });
 
     // ── Upcoming birthdays (next 14 days) ──
     const allWithDOB = await prisma.bhakto.findMany({
@@ -181,7 +187,7 @@ const getStats = async (req, res) => {
         categoryStats: categoryStats.map((c) => ({
           id:          c.id,
           name:        c.name,
-          bhaktoCount: c._count.bhaktos,
+          bhaktoCount: c._count.bhaktos ?? 0,
         })),
         pocketCount,
         upcomingBirthdays: upcomingBirthdays.map((b) => ({
