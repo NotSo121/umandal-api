@@ -39,7 +39,14 @@ const getNotifications = async (req, res) => {
       return { ...e, daysUntil };
     });
 
-    // ── Upcoming birthdays (next 14 days) ────────────────────────────────────
+    // ── Birthdays in current Sabha week (Saturday → Friday) ─────────────────
+    // daysSinceSat: Sat=0, Sun=1, Mon=2, Tue=3, Wed=4, Thu=5, Fri=6
+    const daysSinceSat = (today.getDay() + 1) % 7;
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - daysSinceSat);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+
     const birthdayFilter = { dateOfBirth: { not: null }, isActive: true };
 
     // Non-admin: only their pocket
@@ -59,14 +66,11 @@ const getNotifications = async (req, res) => {
     const upcomingBirthdays = allWithDOB
       .map((b) => {
         const dob        = new Date(b.dateOfBirth);
-        let   bdayThisYr = new Date(today.getFullYear(), dob.getMonth(), dob.getDate());
-        if (bdayThisYr < today) {
-          bdayThisYr = new Date(today.getFullYear() + 1, dob.getMonth(), dob.getDate());
-        }
-        const daysUntil = Math.round((bdayThisYr - today) / (1000 * 60 * 60 * 24));
-        return { ...b, daysUntil };
+        const bdayThisYr = new Date(today.getFullYear(), dob.getMonth(), dob.getDate());
+        const daysUntil  = Math.round((bdayThisYr - today) / (1000 * 60 * 60 * 24));
+        return { ...b, daysUntil, birthdayDate: bdayThisYr };
       })
-      .filter((b) => b.daysUntil <= 14)
+      .filter((b) => b.birthdayDate >= weekStart && b.birthdayDate <= weekEnd)
       .sort((a, b) => a.daysUntil - b.daysUntil);
 
     // ── Anniversaries of special events (next 14 days, admin only) ──────────
