@@ -78,6 +78,13 @@ model Bhakto {
   updatedBy   String?
   attendances Attendance[]
   user        User?
+
+  @@index([referenceBy])
+  @@index([isActive])
+  @@index([referenceBy, isActive])
+  @@index([societyId])
+  @@index([categoryId])
+  @@index([isLeader])
 }
 
 model EventCategory {
@@ -100,6 +107,10 @@ model Event {
   eventCategory   EventCategory? @relation(fields: [eventCategoryId], references: [id])
   createdAt       DateTime       @default(now())
   attendances     Attendance[]
+
+  @@index([eventDate])
+  @@index([isActive])
+  @@index([seriesTag])
 }
 
 model Attendance {
@@ -113,6 +124,8 @@ model Attendance {
   createdAt DateTime @default(now())
 
   @@unique([bhaktoId, eventId])
+  @@index([eventId])
+  @@index([bhaktoId])
 }
 
 model BackupHistory {

@@ -1,44 +1,36 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-// Helper: get logged-in user's linked leader name
-const getLeaderName = async (userId) => {
-  try {
-    const uid = parseInt(userId);
-    const user = await prisma.user.findUnique({
-      where: { id: uid },
-      select: { bhaktoId: true },
-    });
-    if (!user?.bhaktoId) return null;
-    const bhakto = await prisma.bhakto.findUnique({
-      where: { id: user.bhaktoId },
-      select: { fullName: true },
-    });
-    return bhakto?.fullName ?? null;
-  } catch (e) {
-    console.error('[getLeaderName] error:', e.message);
-    return null;
-  }
-};
-
 // GET /api/attendance/:eventId
-// SUPER_ADMIN → all bhaktos, no pocket marking
-// ADMIN → all bhaktos; pocket bhaktos flagged with isMyPocket=true if bhaktoId linked
-// USER → only their leader's bhaktos (scoped list, isMyPocket always false)
+// SUPER_ADMIN → all bhaktos
+// ADMIN       → own pocket (flagged) + unassigned bhaktos
+// USER        → self (top) + own pocket
 const getAttendanceByEvent = async (req, res) => {
   try {
-    const eventId = parseInt(req.params.eventId);
+    const eventId      = parseInt(req.params.eventId);
+    const userId       = parseInt(req.user.sub);
+    const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
+    const isAdmin      = req.user.role === 'ADMIN';
 
-    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    // ── Parallel fetch: event + attendance records + user (with linked bhakto) ──
+    const [event, attendances, userRecord] = await Promise.all([
+      prisma.event.findUnique({ where: { id: eventId } }),
+      prisma.attendance.findMany({ where: { eventId } }),
+      !isSuperAdmin
+        ? prisma.user.findUnique({
+            where:  { id: userId },
+            select: {
+              bhaktoId: true,
+              bhakto:   { select: { id: true, fullName: true, mobileNo: true, photoUrl: true } },
+            },
+          })
+        : Promise.resolve(null),
+    ]);
+
     if (!event) {
       return res.status(404).json({ success: false, error: 'Event not found' });
     }
 
-    const isAdmin      = ['ADMIN','SUPER_ADMIN'].includes(req.user.role);
-    const isSuperAdmin = req.user.role === 'SUPER_ADMIN';
-
-    // Get existing attendance records for this event (needed by all branches)
-    const attendances = await prisma.attendance.findMany({ where: { eventId } });
     const attendanceMap = {};
     attendances.forEach((a) => { attendanceMap[a.bhaktoId] = a; });
 
@@ -54,21 +46,26 @@ const getAttendanceByEvent = async (req, res) => {
       ...extras,
     });
 
-    if (!isAdmin) {
-      // USER: own bhakto (self) at top + pocket members below
-      const userId     = parseInt(req.user.sub);
-      const userRecord = await prisma.user.findUnique({
-        where:  { id: userId },
-        select: { bhaktoId: true },
+    // ── SUPER_ADMIN: all bhaktos ──────────────────────────────────────────────
+    if (isSuperAdmin) {
+      const bhaktos = await prisma.bhakto.findMany({
+        where:   { isActive: true },
+        select:  { id: true, fullName: true, mobileNo: true, photoUrl: true },
+        orderBy: { fullName: 'asc' },
       });
-      const selfBhaktoId = userRecord?.bhaktoId ?? null;
-      const leaderName   = await getLeaderName(userId);
+      return res.json({ success: true, data: { event, attendance: bhaktos.map((b) => mapBhakto(b)) } });
+    }
 
-      if (!leaderName && !selfBhaktoId) {
+    // selfBhakto and leaderName now come from the single parallel query above
+    const selfBhakto = userRecord?.bhakto ?? null;
+    const leaderName = selfBhakto?.fullName ?? null;
+
+    // ── USER: self (top) + pocket members ────────────────────────────────────
+    if (!isAdmin) {
+      if (!selfBhakto) {
         return res.json({ success: true, data: { event, attendance: [] } });
       }
 
-      // Pocket members (referenceBy = leader's fullName)
       const pocketBhaktos = leaderName
         ? await prisma.bhakto.findMany({
             where:   { isActive: true, referenceBy: leaderName },
@@ -77,52 +74,39 @@ const getAttendanceByEvent = async (req, res) => {
           })
         : [];
 
-      // Self bhakto (only if not already in pocket)
       const pocketIdSet = new Set(pocketBhaktos.map((b) => b.id));
-      let selfBhakto = null;
-      if (selfBhaktoId && !pocketIdSet.has(selfBhaktoId)) {
-        selfBhakto = await prisma.bhakto.findUnique({
-          where:  { id: selfBhaktoId },
-          select: { id: true, fullName: true, mobileNo: true, photoUrl: true },
-        });
-      }
+      const selfEntry   = !pocketIdSet.has(selfBhakto.id) ? selfBhakto : null;
 
-      const result = [
-        ...(selfBhakto ? [mapBhakto(selfBhakto, { isSelf: true })] : []),
-        ...pocketBhaktos.map((b) => mapBhakto(b)),
-      ];
-
-      return res.json({ success: true, data: { event, attendance: result } });
-    }
-
-    // SUPER_ADMIN → all bhaktos, no pocket marking
-    if (isSuperAdmin) {
-      const bhaktos = await prisma.bhakto.findMany({
-        where:   { isActive: true },
-        select:  { id: true, fullName: true, mobileNo: true, photoUrl: true },
-        orderBy: { fullName: 'asc' },
+      return res.json({
+        success: true,
+        data: {
+          event,
+          attendance: [
+            ...(selfEntry ? [mapBhakto(selfEntry, { isSelf: true })] : []),
+            ...pocketBhaktos.map((b) => mapBhakto(b)),
+          ],
+        },
       });
-      const result = bhaktos.map((b) => mapBhakto(b));
-      return res.json({ success: true, data: { event, attendance: result } });
     }
 
-    // ADMIN → own pocket (flagged) + unassigned bhaktos only
-    const leaderName = await getLeaderName(req.user.sub);
-    let pocketIds    = new Set();
+    // ── ADMIN: own pocket (flagged) + unassigned bhaktos ─────────────────────
+    let pocketIds   = new Set();
     let bhaktoWhere;
 
     if (leaderName) {
-      const pocket = await prisma.bhakto.findMany({
-        where:  { isActive: true, referenceBy: leaderName },
-        select: { id: true },
-      });
-      pocketIds   = new Set(pocket.map((b) => b.id));
+      // Fetch pocket ids + build where clause in parallel
+      const [pocket] = await Promise.all([
+        prisma.bhakto.findMany({
+          where:  { isActive: true, referenceBy: leaderName },
+          select: { id: true },
+        }),
+      ]);
+      pocket.forEach((b) => pocketIds.add(b.id));
       bhaktoWhere = {
         isActive: true,
         OR: [{ referenceBy: null }, { referenceBy: leaderName }],
       };
     } else {
-      // ADMIN without linked bhakto: only unassigned
       bhaktoWhere = { isActive: true, referenceBy: null };
     }
 
@@ -132,9 +116,10 @@ const getAttendanceByEvent = async (req, res) => {
       orderBy: { fullName: 'asc' },
     });
 
-    const result = bhaktos.map((b) => mapBhakto(b, { isMyPocket: pocketIds.has(b.id) }));
-
-    return res.json({ success: true, data: { event, attendance: result } });
+    return res.json({
+      success: true,
+      data: { event, attendance: bhaktos.map((b) => mapBhakto(b, { isMyPocket: pocketIds.has(b.id) })) },
+    });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, error: 'Internal server error' });
@@ -162,67 +147,56 @@ const saveAttendance = async (req, res) => {
       return res.status(403).json({ success: false, error: 'Attendance is locked for this event. Contact admin to unlock.' });
     }
 
-    // ADMIN (not SUPER_ADMIN): can only save unassigned + own pocket
-    if (req.user.role === 'ADMIN') {
+    // ADMIN / USER scope validation (single user fetch covers both)
+    if (req.user.role !== 'SUPER_ADMIN') {
       const userId     = parseInt(req.user.sub);
-      const leaderName = await getLeaderName(userId);
       const bhaktoIds  = attendance.map((a) => parseInt(a.bhaktoId));
-      const validIds   = new Set();
 
-      // Allow unassigned bhaktos
-      const unassigned = await prisma.bhakto.findMany({
-        where:  { id: { in: bhaktoIds }, referenceBy: null },
-        select: { id: true },
-      });
-      unassigned.forEach((b) => validIds.add(b.id));
-
-      // Allow own pocket
-      if (leaderName) {
-        const pocket = await prisma.bhakto.findMany({
-          where:  { id: { in: bhaktoIds }, referenceBy: leaderName },
-          select: { id: true },
-        });
-        pocket.forEach((b) => validIds.add(b.id));
-      }
-
-      const invalid = bhaktoIds.filter((id) => !validIds.has(id));
-      if (invalid.length > 0) {
-        return res.status(403).json({ success: false, error: 'Access denied: you can only save attendance for unassigned bhaktos or your own pocket' });
-      }
-    }
-
-    // USER: validate all bhaktoIds belong to their group (pocket + self)
-    if (!['ADMIN','SUPER_ADMIN'].includes(req.user.role)) {
-      const userId     = parseInt(req.user.sub);
+      // One query: get user + linked bhakto (name) instead of two sequential queries
       const userRecord = await prisma.user.findUnique({
         where:  { id: userId },
-        select: { bhaktoId: true },
+        select: { bhaktoId: true, bhakto: { select: { fullName: true } } },
       });
       const selfBhaktoId = userRecord?.bhaktoId ?? null;
-      const leaderName   = await getLeaderName(userId);
+      const leaderName   = userRecord?.bhakto?.fullName ?? null;
 
       if (!leaderName && !selfBhaktoId) {
         return res.status(403).json({ success: false, error: 'Your account is not linked to a leader' });
       }
 
-      const bhaktoIds = attendance.map((a) => parseInt(a.bhaktoId));
-      const validIds  = new Set();
+      const validIds = new Set();
 
-      // Allow own bhakto
-      if (selfBhaktoId) validIds.add(selfBhaktoId);
-
-      // Allow pocket members
-      if (leaderName) {
-        const pocket = await prisma.bhakto.findMany({
-          where:  { id: { in: bhaktoIds }, referenceBy: leaderName },
-          select: { id: true },
-        });
+      if (req.user.role === 'ADMIN') {
+        // ADMIN: unassigned + own pocket — run both lookups in parallel
+        const [unassigned, pocket] = await Promise.all([
+          prisma.bhakto.findMany({
+            where:  { id: { in: bhaktoIds }, referenceBy: null },
+            select: { id: true },
+          }),
+          leaderName
+            ? prisma.bhakto.findMany({
+                where:  { id: { in: bhaktoIds }, referenceBy: leaderName },
+                select: { id: true },
+              })
+            : Promise.resolve([]),
+        ]);
+        unassigned.forEach((b) => validIds.add(b.id));
         pocket.forEach((b) => validIds.add(b.id));
+      } else {
+        // USER: self + pocket — run pocket lookup only (self already known)
+        if (selfBhaktoId) validIds.add(selfBhaktoId);
+        if (leaderName) {
+          const pocket = await prisma.bhakto.findMany({
+            where:  { id: { in: bhaktoIds }, referenceBy: leaderName },
+            select: { id: true },
+          });
+          pocket.forEach((b) => validIds.add(b.id));
+        }
       }
 
       const invalid = bhaktoIds.filter((id) => !validIds.has(id));
       if (invalid.length > 0) {
-        return res.status(403).json({ success: false, error: 'Access denied: some bhaktos do not belong to you' });
+        return res.status(403).json({ success: false, error: 'Access denied: some bhaktos are outside your scope' });
       }
     }
 

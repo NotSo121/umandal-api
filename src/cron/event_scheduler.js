@@ -1,4 +1,5 @@
-const cron = require('node-cron');
+const cron  = require('node-cron');
+const https = require('https');
 const { PrismaClient } = require('@prisma/client');
 const { sendPush } = require('../utils/fcm');
 
@@ -101,6 +102,16 @@ const startEventScheduler = () => {
   }, { timezone: 'Asia/Kolkata' });
 
   console.log('[scheduler] Attendance reminder cron started — every day 11 PM IST');
+
+  // ── Keep-alive: ping self every 14 min to prevent Render cold starts ──────
+  cron.schedule('*/14 * * * *', () => {
+    https.get('https://umandal-api.onrender.com/', (res) => {
+      console.log(`[keep-alive] ping OK — status ${res.statusCode}`);
+    }).on('error', (e) => {
+      console.error('[keep-alive] ping failed:', e.message);
+    });
+  });
+  console.log('[scheduler] Keep-alive cron started — pinging every 14 min');
 };
 
 module.exports = { startEventScheduler };
