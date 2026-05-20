@@ -32,7 +32,8 @@ model User {
   updatedAt DateTime @updatedAt
   createdBy String?
   updatedBy String?
-  fcmToken  String?
+  fcmToken      String?
+  tokenVersion  Int     @default(0)
 }
 
 model Mandal {

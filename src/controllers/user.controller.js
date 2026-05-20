@@ -132,9 +132,12 @@ const updateUser = async (req, res) => {
     }
 
     const updateData = { updatedBy: req.user.username };
-    if (username)                  updateData.username = username;
-    if (role)                      updateData.role     = resolveRole(role, req.user.role);
-    if (password)                  updateData.password = await bcrypt.hash(password, 10);
+    if (username)                  updateData.username     = username;
+    if (role)                      updateData.role         = resolveRole(role, req.user.role);
+    if (password) {
+                                   updateData.password     = await bcrypt.hash(password, 10);
+                                   updateData.tokenVersion = { increment: 1 }; // invalidate all sessions
+    }
     if (newBhaktoId !== undefined) updateData.bhaktoId = newBhaktoId;
 
     const user = await prisma.user.update({

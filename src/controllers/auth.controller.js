@@ -50,13 +50,14 @@ const login = async (req, res) => {
       return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
-    // Sign JWT (include bhaktoId for fast permission checks)
+    // Sign JWT (include tokenVersion so middleware can invalidate old tokens)
     const token = jwt.sign(
       {
-        sub:      user.id,
-        username: user.username,
-        role:     user.role,
-        bhaktoId: user.bhaktoId ?? null,
+        sub:          user.id,
+        username:     user.username,
+        role:         user.role,
+        bhaktoId:     user.bhaktoId ?? null,
+        tokenVersion: user.tokenVersion,
       },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN }
@@ -155,7 +156,8 @@ const updateMe = async (req, res) => {
       if (!isMatch) {
         return res.status(400).json({ success: false, error: 'Current password is incorrect' });
       }
-      updateData.password = await bcrypt.hash(newPassword, 10);
+      updateData.password     = await bcrypt.hash(newPassword, 10);
+      updateData.tokenVersion = { increment: 1 }; // invalidate all other sessions
     }
 
     if (Object.keys(updateData).length === 0) {
