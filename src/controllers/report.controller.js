@@ -56,6 +56,11 @@ const getEventReport = async (req, res) => {
       if (referenceBy) bhaktoIds = await getBhaktoIdsForLeader(referenceBy);
     }
 
+    // Total bhaktos in scope — computed once, used as denominator for rate
+    const totalBhaktos = bhaktoIds !== null
+      ? bhaktoIds.length
+      : await prisma.bhakto.count({ where: { isActive: true } });
+
     const events = await prisma.event.findMany({
       where: { isActive: true },
       orderBy: { eventDate: 'desc' },
@@ -68,12 +73,13 @@ const getEventReport = async (req, res) => {
           attendanceWhere.bhaktoId = { in: bhaktoIds };
         }
 
-        const [total, present] = await Promise.all([
-          prisma.attendance.count({ where: attendanceWhere }),
+        const [present, absent] = await Promise.all([
           prisma.attendance.count({ where: { ...attendanceWhere, isPresent: true } }),
+          prisma.attendance.count({ where: { ...attendanceWhere, isPresent: false } }),
         ]);
 
-        const rate = total > 0 ? Math.round((present / total) * 100) : 0;
+        const notMarked = totalBhaktos - present - absent;
+        const rate      = totalBhaktos > 0 ? Math.round((present / totalBhaktos) * 100) : 0;
 
         return {
           id:        event.id,
@@ -81,9 +87,10 @@ const getEventReport = async (req, res) => {
           eventDate: event.eventDate,
           location:  event.location,
           isOpen:    event.isOpen,
-          total,
+          total:     totalBhaktos,
           present,
-          absent:    total - present,
+          absent,
+          notMarked,
           rate,
         };
       })
@@ -129,6 +136,10 @@ const getEventReportDetail = async (req, res) => {
       attendanceWhere.bhaktoId = { in: bhaktoIds };
     }
 
+    const totalBhaktos = bhaktoIds !== null
+      ? bhaktoIds.length
+      : await prisma.bhakto.count({ where: { isActive: true } });
+
     const attendances = await prisma.attendance.findMany({
       where: attendanceWhere,
       include: {
@@ -141,7 +152,7 @@ const getEventReportDetail = async (req, res) => {
       orderBy: [{ isPresent: 'desc' }, { bhakto: { fullName: 'asc' } }],
     });
 
-    return res.json({ success: true, data: { event, attendance: attendances } });
+    return res.json({ success: true, data: { event, attendance: attendances, totalBhaktos } });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, error: 'Internal server error' });
@@ -203,22 +214,26 @@ const getLeaderDetail = async (req, res) => {
       orderBy: { eventDate: 'desc' },
     });
 
+    const totalBhaktos = bhaktoIds.length;
+
     const eventStats = await Promise.all(
       events.map(async (event) => {
         const where = { eventId: event.id, bhaktoId: { in: bhaktoIds } };
-        const [total, present] = await Promise.all([
-          prisma.attendance.count({ where }),
+        const [present, absent] = await Promise.all([
           prisma.attendance.count({ where: { ...where, isPresent: true } }),
+          prisma.attendance.count({ where: { ...where, isPresent: false } }),
         ]);
-        const rate = total > 0 ? Math.round((present / total) * 100) : 0;
+        const notMarked = totalBhaktos - present - absent;
+        const rate      = totalBhaktos > 0 ? Math.round((present / totalBhaktos) * 100) : 0;
         return {
           id:        event.id,
           name:      event.name,
           eventDate: event.eventDate,
           location:  event.location,
-          total,
+          total:     totalBhaktos,
           present,
-          absent:    total - present,
+          absent,
+          notMarked,
           rate,
         };
       })
@@ -276,6 +291,10 @@ const getSeriesReport = async (req, res) => {
       orderBy: { eventDate: 'asc' },
     });
 
+    const totalBhaktos = bhaktoIds !== null
+      ? bhaktoIds.length
+      : await prisma.bhakto.count({ where: { isActive: true } });
+
     const result = await Promise.all(
       events.map(async (event) => {
         const attendanceWhere = { eventId: event.id };
@@ -283,20 +302,23 @@ const getSeriesReport = async (req, res) => {
           attendanceWhere.bhaktoId = { in: bhaktoIds };
         }
 
-        const [total, present] = await Promise.all([
-          prisma.attendance.count({ where: attendanceWhere }),
+        const [present, absent] = await Promise.all([
           prisma.attendance.count({ where: { ...attendanceWhere, isPresent: true } }),
+          prisma.attendance.count({ where: { ...attendanceWhere, isPresent: false } }),
         ]);
 
-        const rate = total > 0 ? Math.round((present / total) * 100) : 0;
+        const notMarked     = totalBhaktos - present - absent;
+        const attendanceRate = totalBhaktos > 0 ? Math.round((present / totalBhaktos) * 100) : 0;
 
         return {
           eventId:        event.id,
           name:           event.name,
           eventDate:      event.eventDate,
-          totalBhakto:    total,
+          totalBhakto:    totalBhaktos,
           totalPresent:   present,
-          attendanceRate: rate,
+          totalAbsent:    absent,
+          notMarked,
+          attendanceRate,
         };
       })
     );
