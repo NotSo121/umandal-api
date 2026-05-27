@@ -39,7 +39,7 @@ const getAttendanceByEvent = async (req, res) => {
       fullName:   b.fullName,
       mobileNo:   b.mobileNo,
       photoUrl:   b.photoUrl,
-      isPresent:  attendanceMap[b.id]?.isPresent || false,
+      isPresent:  attendanceMap[b.id] ? attendanceMap[b.id].isPresent : null,
       remarks:    attendanceMap[b.id]?.remarks   || null,
       isMyPocket: false,
       isSelf:     false,
@@ -200,28 +200,26 @@ const saveAttendance = async (req, res) => {
       }
     }
 
-    const upserts = attendance.map((item) =>
-      prisma.attendance.upsert({
-        where: {
-          bhaktoId_eventId: {
-            bhaktoId: parseInt(item.bhaktoId),
-            eventId,
-          },
-        },
-        update: {
-          isPresent: Boolean(item.isPresent),
-          remarks:   item.remarks || null,
-        },
-        create: {
-          bhaktoId:  parseInt(item.bhaktoId),
-          eventId,
-          isPresent: Boolean(item.isPresent),
-          remarks:   item.remarks || null,
-        },
-      })
-    );
+    // null isPresent = not marked → delete record; true/false → upsert
+    const toDelete = attendance.filter((item) => item.isPresent === null || item.isPresent === undefined);
+    const toUpsert = attendance.filter((item) => item.isPresent === true || item.isPresent === false);
 
-    await prisma.$transaction(upserts);
+    const operations = [
+      ...toDelete.map((item) =>
+        prisma.attendance.deleteMany({
+          where: { bhaktoId: parseInt(item.bhaktoId), eventId },
+        })
+      ),
+      ...toUpsert.map((item) =>
+        prisma.attendance.upsert({
+          where: { bhaktoId_eventId: { bhaktoId: parseInt(item.bhaktoId), eventId } },
+          update: { isPresent: item.isPresent, remarks: item.remarks || null },
+          create: { bhaktoId: parseInt(item.bhaktoId), eventId, isPresent: item.isPresent, remarks: item.remarks || null },
+        })
+      ),
+    ];
+
+    await prisma.$transaction(operations);
 
     res.json({ success: true, data: `Attendance saved for ${attendance.length} bhakto` });
 
@@ -237,7 +235,7 @@ const saveAttendance = async (req, res) => {
         if (!irregularCategory) return;
 
         const absentIds = attendance
-          .filter((a) => !a.isPresent)
+          .filter((a) => a.isPresent === false)
           .map((a) => parseInt(a.bhaktoId));
         if (absentIds.length === 0) return;
 
@@ -250,7 +248,7 @@ const saveAttendance = async (req, res) => {
               select:  { isPresent: true },
             });
 
-            if (last4.length === 4 && last4.every((a) => !a.isPresent)) {
+            if (last4.length === 4 && last4.every((a) => a.isPresent === false)) {
               await prisma.bhakto.update({
                 where: { id: bhaktoId },
                 data:  { categoryId: irregularCategory.id },
@@ -291,8 +289,8 @@ const getAttendanceByBhakto = async (req, res) => {
     });
 
     const total   = attendances.length;
-    const present = attendances.filter((a) => a.isPresent).length;
-    const absent  = total - present;
+    const present = attendances.filter((a) => a.isPresent === true).length;
+    const absent  = attendances.filter((a) => a.isPresent === false).length;
 
     return res.json({
       success: true,

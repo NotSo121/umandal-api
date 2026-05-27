@@ -120,7 +120,7 @@ model Attendance {
   bhakto    Bhakto   @relation(fields: [bhaktoId], references: [id])
   eventId   Int
   event     Event    @relation(fields: [eventId], references: [id])
-  isPresent Boolean  @default(false)
+  isPresent Boolean?
   remarks   String?
   createdAt DateTime @default(now())
 
