@@ -6,7 +6,7 @@ const { upload, uploadExcel } = require('../middleware/upload.middleware');
 const {
   getAllBhakto, getBhaktoById, createBhakto,
   updateBhakto, deleteBhakto, toggleBhakto,
-  importBhakto, exportBhakto, getBhaktoImportSample,
+  toggleIrregular, importBhakto, exportBhakto, getBhaktoImportSample,
 } = require('../controllers/bhakto.controller');
 
 // All routes require JWT
@@ -25,7 +25,9 @@ router.post('/',              upload.single('photo'), createBhakto);
 router.put('/:id',            upload.single('photo'), updateBhakto);
 router.delete('/:id',         deleteBhakto);
 
-// Toggle: admin only
-router.patch('/:id/toggle',   roleMiddleware, toggleBhakto);                       // Admin only
+// Toggle active: admin only
+router.patch('/:id/toggle',          roleMiddleware, toggleBhakto);
+// Toggle irregular: JWT only (controller enforces pocket check for non-admin)
+router.patch('/:id/toggle-irregular', toggleIrregular);
 
 module.exports = router;

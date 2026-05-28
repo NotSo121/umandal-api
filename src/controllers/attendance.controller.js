@@ -223,17 +223,23 @@ const saveAttendance = async (req, res) => {
 
     res.json({ success: true, data: `Attendance saved for ${attendance.length} bhakto` });
 
-    // Fire-and-forget: auto-assign "Irregular" category for 4-streak absences
+    // Fire-and-forget: auto isIrregular flag
     setImmediate(async () => {
       try {
         if (!event.eventCategoryId) return;
 
-        const irregularCategory = await prisma.category.findFirst({
-          where:  { name: 'Irregular' },
-          select: { id: true },
-        });
-        if (!irregularCategory) return;
+        // Reset isIrregular for anyone who just came present
+        const presentIds = attendance
+          .filter((a) => a.isPresent === true)
+          .map((a) => parseInt(a.bhaktoId));
+        if (presentIds.length > 0) {
+          await prisma.bhakto.updateMany({
+            where: { id: { in: presentIds }, isIrregular: true },
+            data:  { isIrregular: false },
+          });
+        }
 
+        // Set isIrregular for anyone with 4 consecutive absences in this category
         const absentIds = attendance
           .filter((a) => a.isPresent === false)
           .map((a) => parseInt(a.bhaktoId));
@@ -251,7 +257,7 @@ const saveAttendance = async (req, res) => {
             if (last4.length === 4 && last4.every((a) => a.isPresent === false)) {
               await prisma.bhakto.update({
                 where: { id: bhaktoId },
-                data:  { categoryId: irregularCategory.id },
+                data:  { isIrregular: true },
               });
             }
           })

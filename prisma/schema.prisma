@@ -69,7 +69,8 @@ model Bhakto {
   category    Category?    @relation(fields: [categoryId], references: [id])
   occupation  String?
   referenceBy String?
-  isLeader    Boolean      @default(false)
+  isLeader     Boolean      @default(false)
+  isIrregular  Boolean      @default(false)
   photoUrl    String?
   isActive    Boolean      @default(true)
   remarks     String?

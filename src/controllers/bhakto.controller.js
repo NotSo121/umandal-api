@@ -8,7 +8,7 @@ const prisma = new PrismaClient();
 // GET /api/bhakto
 const getAllBhakto = async (req, res) => {
   try {
-    const { name, mandalId, societyId, categoryId, isActive, isLeader, referenceBy, noLeader } = req.query;
+    const { name, mandalId, societyId, categoryId, isActive, isLeader, isIrregular, referenceBy, noLeader } = req.query;
 
     const filters = {};
 
@@ -28,8 +28,9 @@ const getAllBhakto = async (req, res) => {
     } else if (referenceBy) {
       filters.referenceBy = referenceBy;
     }
-    if (isActive  !== undefined) filters.isActive  = isActive  === 'true';
-    if (isLeader  !== undefined) filters.isLeader  = isLeader  === 'true';
+    if (isActive    !== undefined) filters.isActive    = isActive    === 'true';
+    if (isLeader    !== undefined) filters.isLeader    = isLeader    === 'true';
+    if (isIrregular !== undefined) filters.isIrregular = isIrregular === 'true';
 
     const bhaktos = await prisma.bhakto.findMany({
       where: filters,
@@ -563,8 +564,37 @@ const exportBhakto = async (req, res) => {
   }
 };
 
+// PATCH /api/bhakto/:id/toggle-irregular
+// ADMIN/SUPER_ADMIN: any bhakto | USER: only their pocket
+const toggleIrregular = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const bhakto = await prisma.bhakto.findUnique({ where: { id } });
+    if (!bhakto) {
+      return res.status(404).json({ success: false, error: 'Bhakto not found' });
+    }
+
+    if (!['ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
+      const leaderName = await getLeaderName(req.user.sub);
+      if (!leaderName || bhakto.referenceBy !== leaderName) {
+        return res.status(403).json({ success: false, error: 'Access denied: not your bhakto' });
+      }
+    }
+
+    const updated = await prisma.bhakto.update({
+      where: { id },
+      data:  { isIrregular: !bhakto.isIrregular, updatedBy: req.user.username },
+    });
+
+    return res.json({ success: true, data: updated });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+};
+
 module.exports = {
   getAllBhakto, getBhaktoById, createBhakto,
   updateBhakto, deleteBhakto, toggleBhakto,
-  importBhakto, exportBhakto, getBhaktoImportSample,
+  toggleIrregular, importBhakto, exportBhakto, getBhaktoImportSample,
 };
